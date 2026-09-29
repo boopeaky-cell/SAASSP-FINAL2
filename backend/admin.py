@@ -138,9 +138,16 @@ def users():
             user_id = request.form.get("user_id")
             u = User.query.get(user_id)
             if u:
-                db.session.delete(u)
-                db.session.commit()
-                flash(f"Deactivated (removed) {u.name}.", "success")
+                if u.id == current_user.id:
+                    flash("You can't remove your own account while logged in.", "error")
+                else:
+                    try:
+                        db.session.delete(u)
+                        db.session.commit()
+                        flash(f"Deactivated (removed) {u.name}.", "success")
+                    except Exception:
+                        db.session.rollback()
+                        flash(f"Could not remove {u.name} — related records are blocking it.", "error")
 
         return redirect(url_for("admin.users"))
 

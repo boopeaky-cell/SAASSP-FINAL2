@@ -25,7 +25,8 @@ class User(db.Model, UserMixin):
     password_hash = db.Column(db.String(255), nullable=False)  # PasswordHash*^
 
     student_modules = db.relationship("StudentModule", backref="student", lazy=True,
-                                       foreign_keys="StudentModule.student_id")
+                                   foreign_keys="StudentModule.student_id",
+                                   cascade="all, delete-orphan")
     taught_modules = db.relationship("LecturerModule", backref="lecturer", lazy=True,
                                       foreign_keys="LecturerModule.lecturer_id",
                                       cascade="all, delete-orphan")
