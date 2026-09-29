@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Log in - SAASSP{% endblock %}
+{% block auth_content %}
+<div class="auth-split">
+  <div class="auth-visual">
+    <img class="bg-photo" src="{{ url_for('static', filename='img/library_dome.jpg') }}" alt="">
+    <div class="bg-scrim"></div>
+    <div class="visual-content">
+      <div class="brand-row">
+        <div class="brand-mark">S</div>
+        <div class="brand-name">SAASSP</div>
+      </div>
+      <div class="auth-headline">Know where you stand, <em>before</em> it matters.</div>
+      <div class="auth-subtext">Smart Academic Advisory &amp; Student Success Platform. Track your Duly Performed progress for every module and get AI-assisted feedback after every mark.</div>
+    </div>
+    <div class="auth-disclaimer">Marks are provisional and self-reported &mdash; not an official academic record.</div>
+  </div>
+
+  <div class="auth-form-side">
+    <div class="auth-form-inner">
+      <div class="auth-title">Log in to SAASSP</div>
+      <div class="auth-sub">University of Zululand</div>
+      <form method="post">
+        <div class="mb-3">
+          <label class="form-label">Student number / Email</label>
+          <input type="text" name="identifier" id="identifier-input" class="form-control" required autofocus
+                 placeholder="e.g. 20211234 (students) or you@saassp.local (staff)">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Password</label>
+          <input type="password" name="password" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-navy text-white w-100 py-2">Log in</button>
+      </form>
+      <div class="auth-switch">New here? <a href="{{ url_for('auth.register') }}">Create a Student account</a></div>
+
+      <div class="quick-access-title">Quick access (demo accounts)</div>
+      <button type="button" class="quick-access-item" onclick="document.getElementById('identifier-input').value='admin@saassp.local'; document.getElementById('identifier-input').focus();">
+        <div class="quick-access-avatar">SA</div>
+        <div>
+          <div class="quick-access-name">System Administrator</div>
+          <div class="quick-access-email">admin@saassp.local</div>
+        </div>
+        <div class="quick-access-role">Password: admin123</div>
+      </button>
+      <button type="button" class="quick-access-item" onclick="document.getElementById('identifier-input').value='staff@saassp.local'; document.getElementById('identifier-input').focus();">
+        <div class="quick-access-avatar">AS</div>
+        <div>
+          <div class="quick-access-name">Demo Academic Staff</div>
+          <div class="quick-access-email">staff@saassp.local</div>
+        </div>
+        <div class="quick-access-role">Password: staff123</div>
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}

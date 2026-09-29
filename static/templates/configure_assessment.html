@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Configure {{ sm.module_code }} - SAASSP{% endblock %}
+{% block content %}
+<div class="section-title">Configure Assessment Structure</div>
+<p class="text-muted">{{ sm.module_code }} &middot; {{ sm.module.module_name }}</p>
+
+<form method="post" id="config-form" style="max-width: 720px;">
+  <div class="card" style="padding: 0; overflow: hidden;">
+    <table class="saassp-table">
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th style="width: 130px;">DP Weighting %</th>
+          <th style="width: 130px;">Total assessments</th>
+          <th style="width: 150px;">Recorded towards DP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cat in categories %}
+        {% set existing_cat = existing.get(cat) %}
+        <tr>
+          <td style="font-weight:600;">{{ cat }}</td>
+          <td><input type="number" min="0" max="100" class="form-control form-control-sm weight-input"
+                     name="weight_{{ cat }}"
+                     value="{{ form_values['weight_'+cat] if form_values else (existing_cat.dp_weighting if existing_cat else 0) }}"></td>
+          <td><input type="number" min="0" class="form-control form-control-sm"
+                     name="total_{{ cat }}"
+                     value="{{ form_values['total_'+cat] if form_values else (existing_cat.total_assessments if existing_cat else 0) }}"></td>
+          <td><input type="number" min="0" class="form-control form-control-sm"
+                     name="recorded_{{ cat }}"
+                     value="{{ form_values['recorded_'+cat] if form_values else (existing_cat.recorded_count if existing_cat else 0) }}"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="d-flex align-items-center justify-content-between mt-3">
+    <div id="weight-total" style="font-size: 14px; font-weight: 700;">Total: 0%</div>
+    <button type="submit" class="btn btn-navy text-white px-4 py-2">Save configuration</button>
+  </div>
+  <p class="text-muted mt-2" style="font-size: 12.5px;">A category left at 0% is excluded from the DP calculation entirely. Weightings across the remaining categories must sum to exactly 100%.</p>
+</form>
+
+<script>
+  function updateTotal() {
+    var inputs = document.querySelectorAll('.weight-input');
+    var total = 0;
+    inputs.forEach(function (i) { total += parseInt(i.value || '0', 10); });
+    var el = document.getElementById('weight-total');
+    el.textContent = 'Total: ' + total + '%';
+    el.style.color = (total === 100) ? '#205A2E' : '#7A2E0B';
+  }
+  document.querySelectorAll('.weight-input').forEach(function (i) {
+    i.addEventListener('input', updateTotal);
+  });
+  updateTotal();
+</script>
+{% endblock %}

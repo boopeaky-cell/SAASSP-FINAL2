@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Select your programme - SAASSP{% endblock %}
+{% block content %}
+<div class="section-title">Select your programme</div>
+<p class="text-muted" style="max-width: 640px;">Choose the programme you are registered for. This list is sourced from the university's approved programme data.</p>
+
+<form method="post" style="max-width: 640px;">
+  <div class="d-flex flex-column gap-2">
+    {% for p in programmes %}
+    <label class="card" style="display:flex; flex-direction: row; align-items: center; gap: 14px; cursor: pointer;">
+      <input type="radio" name="programme_code" value="{{ p.programme_code }}" required>
+      <div>
+        <div style="font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: 0.4px;">{{ p.programme_code }}</div>
+        <div style="font-size: 15px; font-weight: 700;">{{ p.programme_name }}</div>
+      </div>
+    </label>
+    {% endfor %}
+  </div>
+  <button type="submit" class="btn btn-navy text-white mt-3 px-4 py-2">Continue to modules</button>
+</form>
+{% endblock %}

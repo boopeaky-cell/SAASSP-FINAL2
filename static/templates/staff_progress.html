@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ sm.module_code }} progress - SAASSP{% endblock %}
+{% block content %}
+<a href="{{ url_for('staff.student_modules', student_id=sm.student_id) }}" style="font-size: 13px; color: var(--muted); display:block; margin-bottom: 10px;">&larr; Back to modules</a>
+<div class="section-title">{{ sm.student.name }} &middot; {{ sm.module_code }}</div>
+<p class="text-muted" style="margin-top:-8px;">{{ sm.module.module_name }} &mdash; read-only view</p>
+
+{% if result %}
+<div class="card mb-3">
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <div style="font-size: 12px; font-weight: 700; color: var(--muted);">DP PROGRESS</div>
+    <span class="band-pill band-{{ result.threshold_band_key }}">{{ result.threshold_band_label }}</span>
+  </div>
+  <div class="d-flex align-items-end gap-3">
+    <div style="font-size: 40px; font-weight: 800; color: var(--navy); line-height:1;">{{ result.progress_percentage }}%</div>
+    <div class="progress-bar-track flex-grow-1 mb-2">
+      <div class="progress-bar-fill" style="width: {{ result.progress_percentage }}%; background: var(--navy);"></div>
+    </div>
+  </div>
+</div>
+
+{% if latest_feedback and latest_feedback.generated_text %}
+<div class="card mb-3">
+  <div style="font-weight:700; font-size: 13.5px; margin-bottom: 4px;">Most recent AI-Assisted Feedback</div>
+  <p style="margin:0; font-size:14px;">{{ latest_feedback.generated_text }}</p>
+</div>
+{% endif %}
+
+<div class="card" style="padding:0; overflow:hidden;">
+  <table class="saassp-table">
+    <thead><tr><th>Category</th><th>Mark</th></tr></thead>
+    <tbody>
+    {% for m in marks %}
+      <tr><td>{{ m.category_name }}</td><td>{{ m.percentage_achieved }}%{% if not m.recorded_towards_dp %} <span class="text-muted">(displaced)</span>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">This module has not had its assessment structure configured yet.</div>
+{% endif %}
+{% endblock %}

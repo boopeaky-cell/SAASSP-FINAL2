@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}User Accounts - SAASSP{% endblock %}
+{% block content %}
+<div class="section-title">Manage User Accounts</div>
+
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card">
+      <div style="font-weight:700; margin-bottom:10px;">Create account</div>
+      <form method="post">
+        <input type="hidden" name="action" value="create">
+        <div class="mb-2">
+          <label class="form-label">Name</label>
+          <input type="text" name="name" class="form-control form-control-sm" required>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Role</label>
+          <select name="role" class="form-select form-select-sm">
+            <option value="student">Student</option>
+            <option value="academic_staff">Academic Staff</option>
+            <option value="admin">System Administrator</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Student number <span class="text-muted" style="font-weight:400; font-size:11px;">(Students)</span></label>
+          <input type="text" name="student_number" class="form-control form-control-sm" placeholder="e.g. 20211234">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Email <span class="text-muted" style="font-weight:400; font-size:11px;">(Academic Staff / Admin)</span></label>
+          <input type="email" name="email" class="form-control form-control-sm">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Temporary password</label>
+          <input type="text" name="password" class="form-control form-control-sm" required>
+        </div>
+        <button type="submit" class="btn btn-navy text-white btn-sm w-100">Create account</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-md-8">
+    <div class="card" style="padding:0; overflow:hidden;">
+      <table class="saassp-table">
+        <thead><tr><th>Name</th><th>Student No. / Email</th><th>Role</th><th>Modules taught</th><th></th></tr></thead>
+        <tbody>
+        {% for u in users %}
+          <tr>
+            <td>{{ u.name }}</td>
+            <td>{{ u.student_number or u.email or '—' }}</td>
+            <td>
+              <form method="post" class="d-flex gap-1">
+                <input type="hidden" name="action" value="update_role">
+                <input type="hidden" name="user_id" value="{{ u.id }}">
+                <select name="role" class="form-select form-select-sm" onchange="this.form.submit()" style="width: 150px;">
+                  <option value="student" {{ 'selected' if u.role=='student' }}>Student</option>
+                  <option value="academic_staff" {{ 'selected' if u.role=='academic_staff' }}>Academic Staff</option>
+                  <option value="admin" {{ 'selected' if u.role=='admin' }}>System Administrator</option>
+                </select>
+              </form>
+            </td>
+            <td>
+              {% if u.role == 'academic_staff' %}
+                <form method="post" class="d-flex flex-wrap gap-2 align-items-center">
+                  <input type="hidden" name="action" value="assign_modules">
+                  <input type="hidden" name="user_id" value="{{ u.id }}">
+                  {% set assigned = assigned_by_lecturer.get(u.id, []) %}
+                  {% for m in all_modules %}
+                    <label style="font-size:12px; font-weight:400; display:flex; align-items:center; gap:3px;">
+                      <input type="checkbox" name="module_codes" value="{{ m.module_code }}" {{ 'checked' if m.module_code in assigned }}>
+                      {{ m.module_code }}
+                    </label>
+                  {% endfor %}
+                  <button type="submit" class="btn btn-outline-navy btn-sm">Save</button>
+                </form>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" onsubmit="return confirm('Remove this account?');">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="user_id" value="{{ u.id }}">
+                <button type="submit" class="btn btn-outline-danger btn-sm">Remove</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

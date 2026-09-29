@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Students - SAASSP{% endblock %}
+{% block content %}
+<div class="hero-banner">
+  <img src="{{ url_for('static', filename='img/library_dome.jpg') }}" alt="" style="object-position: center 20%;">
+  <div class="hero-scrim"></div>
+  <div class="hero-text">
+    <div class="hero-title">Welcome, {{ current_user.name.split(' ')[0] }}</div>
+    <div class="hero-sub">Review your students' DP progress, read-only.</div>
+  </div>
+</div>
+
+<div class="section-title">Students</div>
+{% if no_modules_assigned %}
+  <div class="card" style="margin-bottom: 12px;">
+    <span class="text-muted">You have no modules assigned yet. Ask a System Administrator to assign the module(s) you teach in Manage User Accounts.</span>
+  </div>
+{% endif %}
+<div class="card" style="padding:0; overflow:hidden;">
+  <table class="saassp-table">
+    <thead><tr><th>Name</th><th>Student Number</th><th></th></tr></thead>
+    <tbody>
+    {% for s in students %}
+      <tr>
+        <td>{{ s.name }}</td>
+        <td>{{ s.student_number }}</td>
+        <td><a href="{{ url_for('staff.student_modules', student_id=s.id) }}" style="color: var(--navy); font-weight:600; font-size: 13px;">View modules &rarr;</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="3" class="text-muted">No students in your module(s) yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

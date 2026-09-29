@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Select your modules - SAASSP{% endblock %}
+{% block content %}
+<div class="section-title">Select your modules</div>
+<p class="text-muted" style="max-width: 640px;">
+  Modules linked to <strong>{{ programme.programme_name }}</strong> ({{ programme.programme_code }}).
+  Choose every module you are registered for this semester.
+</p>
+
+<form method="post" style="max-width: 640px;">
+  <div class="card" style="padding: 0;">
+    {% for link in links %}
+    <label class="category-row" style="padding: 14px 18px; cursor: pointer;">
+      <div style="display:flex; align-items:center; gap: 14px;">
+        <input type="checkbox" name="module_code" value="{{ link.module_code }}">
+        <div>
+          <div style="font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: 0.4px;">{{ link.module_code }}</div>
+          <div style="font-size: 14.5px; font-weight: 600;">{{ link.module.module_name }}</div>
+        </div>
+      </div>
+    </label>
+    {% else %}
+    <div class="p-3 text-muted">No modules are linked to this programme yet. Ask a System Administrator to load them.</div>
+    {% endfor %}
+  </div>
+  <a href="{{ url_for('student.select_programme') }}" class="d-block mt-2" style="font-size: 13px; color: var(--muted);">&larr; Back to programme</a>
+  <button type="submit" class="btn btn-navy text-white mt-3 px-4 py-2">Save and continue to Dashboard</button>
+</form>
+{% endblock %}

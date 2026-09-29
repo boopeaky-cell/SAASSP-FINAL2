@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - SAASSP{% endblock %}
+{% block content %}
+<div class="hero-banner">
+  <img src="{{ url_for('static', filename='img/campus_building.jpg') }}" alt="">
+  <div class="hero-scrim"></div>
+  <div class="hero-text">
+    <div class="hero-title">Welcome back, {{ current_user.name.split(' ')[0] }}</div>
+    <div class="hero-sub">Here's where your modules stand today, and what to focus on next.</div>
+  </div>
+</div>
+
+<div class="d-flex align-items-baseline justify-content-between mb-3">
+  <div class="section-title mb-0">Your Modules</div>
+  <a href="{{ url_for('student.select_programme') }}" style="font-size: 13px; font-weight: 600; color: var(--navy);">+ Add another module</a>
+</div>
+
+{% if not summaries %}
+<div class="card">
+  <p class="mb-2">You haven't selected any modules yet.</p>
+  <a href="{{ url_for('student.select_programme') }}" class="btn btn-navy text-white">Select your programme and modules</a>
+</div>
+{% else %}
+<div class="module-grid">
+  {% for sm, result, configured in summaries %}
+  <a href="{{ url_for('student.module_detail', sm_id=sm.id) }}" class="card" style="text-decoration:none; color: inherit; display:block;">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.4px; color: var(--muted);">{{ sm.module_code }} &middot; {{ sm.module.module_name|upper }}</div>
+      {% if configured %}
+      <span class="band-pill band-{{ result.threshold_band_key }}">{{ result.threshold_band_label }}</span>
+      {% else %}
+      <span class="band-pill" style="background:#ECE8DA; color: var(--muted);">Not configured</span>
+      {% endif %}
+    </div>
+    {% if configured %}
+    <div class="d-flex align-items-end gap-3 mb-2">
+      <div style="font-size: 32px; font-weight: 800; line-height:1; color: var(--navy);">{{ result.progress_percentage }}%</div>
+      <div class="progress-bar-track flex-grow-1 mb-1">
+        <div class="progress-bar-fill" style="width: {{ result.progress_percentage }}%; background: var(--navy);"></div>
+      </div>
+    </div>
+    <div style="font-size: 12.5px; color: var(--muted);">{{ sm.marks|length }} mark(s) uploaded</div>
+    {% else %}
+    <p class="text-muted mb-0" style="font-size: 13.5px;">Configure this module's assessment structure to start tracking DP progress.</p>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

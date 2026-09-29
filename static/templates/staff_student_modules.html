@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ student.name }} - SAASSP{% endblock %}
+{% block content %}
+<a href="{{ url_for('staff.student_list') }}" style="font-size: 13px; color: var(--muted); display:block; margin-bottom: 10px;">&larr; Back to students</a>
+<div class="section-title">{{ student.name }}'s Modules</div>
+<div class="module-grid">
+  {% for sm in modules %}
+  <a href="{{ url_for('staff.student_progress', student_id=student.id, sm_id=sm.id) }}" class="card" style="text-decoration:none; color:inherit; display:block;">
+    <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.4px; color: var(--muted); margin-bottom: 6px;">{{ sm.module_code }}</div>
+    <div style="font-size: 15px; font-weight: 700;">{{ sm.module.module_name }}</div>
+  </a>
+  {% else %}
+  <p class="text-muted">This student hasn't selected any modules yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

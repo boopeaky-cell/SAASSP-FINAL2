@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Programme Data - SAASSP{% endblock %}
+{% block content %}
+<div class="section-title">Manage Programme and Module Data</div>
+<p class="text-muted">Currently loaded: {{ programmes|length }} programme(s), {{ modules_count }} module(s), {{ links_count }} programme-module link(s).</p>
+
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card">
+      <div style="font-weight:700; margin-bottom:8px;">Import programmes.csv</div>
+      <p class="text-muted" style="font-size:12.5px;">Columns: programme_code, programme_name</p>
+      <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="kind" value="programmes">
+        <input type="file" name="csv_file" accept=".csv" class="form-control form-control-sm mb-2" required>
+        <button type="submit" class="btn btn-navy text-white btn-sm w-100">Import</button>
+      </form>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card">
+      <div style="font-weight:700; margin-bottom:8px;">Import modules.csv</div>
+      <p class="text-muted" style="font-size:12.5px;">Columns: module_code, module_name</p>
+      <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="kind" value="modules">
+        <input type="file" name="csv_file" accept=".csv" class="form-control form-control-sm mb-2" required>
+        <button type="submit" class="btn btn-navy text-white btn-sm w-100">Import</button>
+      </form>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card">
+      <div style="font-weight:700; margin-bottom:8px;">Import programme_modules.csv</div>
+      <p class="text-muted" style="font-size:12.5px;">Columns: programme_code, module_code</p>
+      <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="kind" value="links">
+        <input type="file" name="csv_file" accept=".csv" class="form-control form-control-sm mb-2" required>
+        <button type="submit" class="btn btn-navy text-white btn-sm w-100">Import</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="card mt-3" style="padding:0; overflow:hidden;">
+  <table class="saassp-table">
+    <thead><tr><th>Programme Code</th><th>Programme Name</th></tr></thead>
+    <tbody>
+    {% for p in programmes %}
+      <tr><td>{{ p.programme_code }}</td><td>{{ p.programme_name }}</td></tr>
+    {% else %}
+      <tr><td colspan="2" class="text-muted">No programmes loaded yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
