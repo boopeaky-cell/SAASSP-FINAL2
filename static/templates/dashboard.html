@@ -29,7 +29,7 @@
       {% if configured %}
       <span class="band-pill band-{{ result.threshold_band_key }}">{{ result.threshold_band_label }}</span>
       {% else %}
-      <span class="band-pill" style="background:#ECE8DA; color: var(--muted);">Not configured</span>
+      <span class="band-pill" style="background:#ECE8DA; color: var(--muted);">Awaiting lecturer</span>
       {% endif %}
     </div>
     {% if configured %}
@@ -41,7 +41,7 @@
     </div>
     <div style="font-size: 12.5px; color: var(--muted);">{{ sm.marks|length }} mark(s) uploaded</div>
     {% else %}
-    <p class="text-muted mb-0" style="font-size: 13.5px;">Configure this module's assessment structure to start tracking DP progress.</p>
+    <p class="text-muted mb-0" style="font-size: 13.5px;">Your lecturer hasn't set up this module's assessment structure yet. Once they do, your DP progress will appear here.</p>
     {% endif %}
   </a>
   {% endfor %}

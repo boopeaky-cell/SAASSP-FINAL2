@@ -5,9 +5,12 @@
   <div>
     <div class="section-title mb-0">{{ sm.module_code }} &middot; {{ sm.module.module_name }}</div>
   </div>
-  <a href="{{ url_for('student.configure_assessment', sm_id=sm.id) }}" style="font-size: 13px; font-weight: 600; color: var(--navy);">Edit assessment structure</a>
+  <span class="text-muted" style="font-size: 12.5px;">Assessment structure is set by your lecturer</span>
 </div>
 
+{% if not result %}
+<div class="card mb-3">Your lecturer hasn't set up this module's assessment structure yet, so marks can't be entered or counted for now. Check back soon.</div>
+{% else %}
 <div class="row g-3 mb-3">
   <div class="col-md-7">
     <div class="card h-100">
@@ -39,7 +42,9 @@
   </div>
 </div>
 
-{% if latest_feedback %}
+{% endif %}
+
+{% if result and latest_feedback %}
 <div class="card mb-3" style="display: flex; flex-direction: row; gap: 14px;">
   <div style="flex:none; width:34px; height:34px; border-radius:999px; background:var(--navy); display:flex; align-items:center; justify-content:center; color: var(--gold); font-weight:800;">AI</div>
   <div>
@@ -53,6 +58,7 @@
 </div>
 {% endif %}
 
+{% if result %}
 <div class="row g-3">
   <div class="col-md-5">
     <div class="card">
@@ -60,10 +66,13 @@
       {% if assessment_categories %}
       <form method="post" action="{{ url_for('student.upload_mark', sm_id=sm.id) }}">
         <div class="mb-2">
-          <label class="form-label">Category</label>
-          <select name="category_name" class="form-select form-select-sm" required>
+          <label class="form-label">Which assessment?</label>
+          <select name="assessment" class="form-select form-select-sm" required>
             {% for cat in assessment_categories %}
-            <option value="{{ cat }}">{{ cat }}</option>
+              {% for a in assessments if a.category_name == cat %}
+              <option value="{{ cat }}::{{ a.label }}">{{ a.label }} ({{ cat }})</option>
+              {% endfor %}
+              <option value="{{ cat }}::">Other {{ cat }}</option>
             {% endfor %}
           </select>
         </div>
@@ -81,15 +90,18 @@
   <div class="col-md-7">
     <div class="card">
       <div style="font-weight:700; font-size: 14px; margin-bottom: 12px;">Upload history</div>
-      {% if marks %}
+      {% if rows %}
       <table class="saassp-table">
-        <thead><tr><th>Category</th><th>Mark</th><th>Status</th></tr></thead>
+        <thead><tr><th>Assessment</th><th>Mark</th><th>Status</th></tr></thead>
         <tbody>
-          {% for m in marks %}
+          {% for m, status in rows %}
           <tr>
-            <td>{{ m.category_name }}</td>
-            <td class="{{ 'mark-displaced' if m.id not in recorded_ids }}">{{ m.percentage_achieved }}%</td>
-            <td>{% if m.id in recorded_ids %}<span style="color:#205A2E; font-weight:600;">Recorded</span>{% else %}<span class="text-muted">Displaced</span>{% endif %}</td>
+            <td>{{ m.assessment_label or m.category_name }}{% if m.assessment_label %} <span class="text-muted" style="font-size:12px;">({{ m.category_name }})</span>{% endif %}
+              {% if m.source == 'lecturer' %}<span class="band-pill" style="background:#E2EBF7; color:#1D3C6B; margin-left:4px;">Lecturer</span>{% endif %}</td>
+            <td class="{{ 'mark-displaced' if status != 'recorded' }}">{{ m.percentage_achieved }}%</td>
+            <td>{% if status == 'recorded' %}<span style="color:#205A2E; font-weight:600;">Recorded</span>
+                {% elif status == 'replaced' %}<span class="text-muted">Replaced by lecturer's mark</span>
+                {% else %}<span class="text-muted">Displaced</span>{% endif %}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -100,4 +112,5 @@
     </div>
   </div>
 </div>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ module.module_code }} - SAASSP{% endblock %}
+{% block content %}
+<a href="{{ url_for('staff.student_list') }}" style="font-size: 13px; color: var(--muted); display:block; margin-bottom: 10px;">&larr; Back to my modules</a>
+<div class="section-title">{{ module.module_code }} &middot; {{ module.module_name }}</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-5">
+    <div class="card h-100">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <div style="font-weight:700;">Assessment structure</div>
+        <a href="{{ url_for('staff.configure_module', module_code=module.module_code) }}" style="font-size:13px; font-weight:600; color: var(--navy);">{{ 'Change' if configs else 'Set up' }} &rarr;</a>
+      </div>
+      {% if configs %}
+        {% for c in configs %}
+        <div class="category-row">
+          <div style="font-size: 13.5px;">{{ c.category_name }}{% if c.dp_weighting == 0 %} <span class="text-muted">(excluded)</span>{% endif %}</div>
+          <div style="font-size: 13px; font-weight: 700; color: var(--muted);">{{ c.dp_weighting }}% &middot; best {{ c.recorded_count }} of {{ c.total_assessments }}</div>
+        </div>
+        {% endfor %}
+        <p class="text-muted mt-2 mb-0" style="font-size: 12px;">Changing this recalculates every student's progress straight away.</p>
+      {% else %}
+        <p class="text-muted mb-0" style="font-size: 13.5px;">Not set up yet. Students can't track DP progress in this module until you do.</p>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-md-7">
+    <div class="card h-100">
+      <div style="font-weight:700; margin-bottom: 10px;">Upload marks for one assessment (CSV)</div>
+      <form method="post" action="{{ url_for('staff.upload_marks', module_code=module.module_code) }}" enctype="multipart/form-data">
+        <div class="row g-2 mb-2">
+          <div class="col-sm-6">
+            <label class="form-label">Assessment name</label>
+            <input type="text" name="assessment_label" maxlength="60" class="form-control form-control-sm" placeholder="e.g. Test 1" required>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label">Category</label>
+            <select name="category_name" class="form-select form-select-sm" required>
+              {% for cat in categories %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">CSV file</label>
+          <input type="file" name="csv_file" accept=".csv" class="form-control form-control-sm" required>
+        </div>
+        <p class="text-muted" style="font-size: 12px;">Two columns with these headings: <code>student_number,mark</code> (mark is a percentage, 0-100). Uploading the same assessment name again updates the marks. A lecturer mark replaces whatever the student entered for that assessment.</p>
+        <button type="submit" class="btn btn-navy text-white btn-sm px-3 py-2">Upload marks</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3" style="padding:0; overflow:hidden;">
+  <div style="padding: 14px 16px; font-weight:700;">Uploaded assessments</div>
+  <table class="saassp-table">
+    <thead><tr><th>Assessment</th><th>Category</th><th>Marks uploaded</th><th></th></tr></thead>
+    <tbody>
+    {% for a in assessments %}
+      <tr>
+        <td>{{ a.label }}</td><td>{{ a.category_name }}</td><td>{{ counts[a.id] }}</td>
+        <td>
+          <form method="post" action="{{ url_for('staff.delete_assessment', module_code=module.module_code, assessment_id=a.id) }}" onsubmit="return confirm('Remove the lecturer marks for {{ a.label }}?');">
+            <button type="submit" class="btn btn-outline-danger btn-sm">Undo upload</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="text-muted">Nothing uploaded yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="padding:0; overflow:hidden;">
+  <div style="padding: 14px 16px; font-weight:700;">Students in this module ({{ students|length }})</div>
+  <table class="saassp-table">
+    <thead><tr><th>Name</th><th>Student Number</th><th>DP progress</th><th></th></tr></thead>
+    <tbody>
+    {% for s, result in students %}
+      <tr>
+        <td>{{ s.name }}</td><td>{{ s.student_number }}</td>
+        <td>{% if result %}{{ result.progress_percentage }}% <span class="band-pill band-{{ result.threshold_band_key }}">{{ result.threshold_band_label }}</span>{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
+        <td><a href="{{ url_for('staff.student_modules', student_id=s.id) }}" style="color: var(--navy); font-weight:600; font-size: 13px;">View &rarr;</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="text-muted">No students have selected this module yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -179,3 +179,36 @@ def test_no_marks_uploaded_yet_gives_zero_progress():
     result = calculate_progress(categories, {}, BANDS)
     assert result.progress_percentage == 0.0
     assert result.threshold_band_key == "critical"
+
+
+# ---------------------------------------------------------------------
+# Lecturer marks replace student-entered marks for the same assessment
+# ---------------------------------------------------------------------
+from types import SimpleNamespace
+from backend.dp_engine import split_effective_marks
+
+
+def _m(id, cat, label, source, pct=0):
+    return SimpleNamespace(id=id, category_name=cat, assessment_label=label, source=source,
+                           percentage_achieved=pct)
+
+
+def test_lecturer_mark_replaces_student_mark_for_same_assessment():
+    marks = [_m(1, "Tests", "Test 1", "student", 90), _m(2, "Tests", "Test 1", "lecturer", 60),
+             _m(3, "Tests", "Test 2", "student", 70)]
+    effective, replaced = split_effective_marks(marks)
+    assert [m.id for m in effective] == [2, 3]
+    assert [m.id for m in replaced] == [1]
+
+
+def test_unlabelled_student_marks_are_never_replaced():
+    marks = [_m(1, "Tests", None, "student", 90), _m(2, "Tests", "Test 1", "lecturer", 60)]
+    effective, replaced = split_effective_marks(marks)
+    assert len(effective) == 2 and replaced == []
+
+
+def test_label_match_is_case_insensitive_and_category_specific():
+    marks = [_m(1, "Tests", "test 1", "student"), _m(2, "Tests", "Test 1", "lecturer"),
+             _m(3, "Quizzes", "Test 1", "student")]
+    effective, replaced = split_effective_marks(marks)
+    assert [m.id for m in replaced] == [1] and 3 in [m.id for m in effective]

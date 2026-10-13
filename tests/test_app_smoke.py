@@ -21,6 +21,8 @@ class TestConfig:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     GEMINI_API_KEY = ""  # force the "no feedback available" path - no network in tests
     GEMINI_MODEL = "gemini-2.0-flash"
+    GROQ_API_KEY = ""    # force the "no feedback available" path - no network in tests
+    GROQ_MODEL = "llama-3.3-70b-versatile"
     THRESHOLD_BANDS = [
         (75, 100.0001, "very_safe", "Very safe / excellent"),
         (70, 75, "safe", "Safe"),
@@ -51,83 +53,241 @@ def register_and_login(client, student_number="20211234"):
                 follow_redirects=True)
 
 
-def test_full_student_flow(client):
-    register_and_login(client)
+CONFIG_A = {
+    "weight_Tests": "50", "total_Tests": "3", "recorded_Tests": "2",
+    "weight_Assignments": "20", "total_Assignments": "2", "recorded_Assignments": "2",
+    "weight_Quizzes": "20", "total_Quizzes": "3", "recorded_Quizzes": "2",
+    "weight_Practicals": "10", "total_Practicals": "2", "recorded_Practicals": "1",
+    "weight_Tutorials": "0", "total_Tutorials": "2", "recorded_Tutorials": "0",
+}
 
-    # Select programme
-    resp = client.post("/student/select-programme", data={"programme_code": "4BSC01"}, follow_redirects=True)
-    assert resp.status_code == 200
 
-    # Select modules
-    resp = client.post("/student/select-modules", data={"module_code": ["4MTH111"]}, follow_redirects=True)
-    assert resp.status_code == 200
-    assert b"4MTH111" in resp.data or b"Calculus" in resp.data
+def make_staff(client, email, role="academic_staff", modules=()):
+    with client.application.app_context():
+        u = User(name=email.split("@")[0].title(), email=email, role=role)
+        u.set_password("pw")
+        db.session.add(u)
+        db.session.commit()
+        for code in modules:
+            db.session.add(LecturerModule(lecturer_id=u.id, module_code=code))
+        db.session.commit()
 
-    # Find the StudentModule id via the dashboard link (simplest: query DB directly)
+
+def login(client, identifier, password="pw"):
+    client.get("/logout", follow_redirects=True)
+    return client.post("/login", data={"identifier": identifier, "password": password},
+                       follow_redirects=True)
+
+
+def enrol_student(client, number, modules=("4MTH111",)):
+    register_and_login(client, student_number=number)
+    client.post("/student/select-programme", data={"programme_code": "4BSC01"}, follow_redirects=True)
+    client.post("/student/select-modules", data={"module_code": list(modules)}, follow_redirects=True)
     from backend.models import StudentModule
     with client.application.app_context():
-        sm = StudentModule.query.filter_by(module_code="4MTH111").first()
-        sm_id = sm.id
+        ids = {sm.module_code: sm.id for sm in StudentModule.query.join(User).filter(User.student_number == number)}
+    client.get("/logout", follow_redirects=True)
+    return ids
 
-    # Configure assessment structure: Tests 50%/3/2, Quizzes 20%/3/2, Assignments 20%/2/2, Practicals 10%/2/1, Tutorials 0%/2/0
-    resp = client.post(f"/student/module/{sm_id}/configure", data={
-        "weight_Tests": "50", "total_Tests": "3", "recorded_Tests": "2",
-        "weight_Assignments": "20", "total_Assignments": "2", "recorded_Assignments": "2",
-        "weight_Quizzes": "20", "total_Quizzes": "3", "recorded_Quizzes": "2",
-        "weight_Practicals": "10", "total_Practicals": "2", "recorded_Practicals": "1",
-        "weight_Tutorials": "0", "total_Tutorials": "2", "recorded_Tutorials": "0",
-    }, follow_redirects=True)
-    assert resp.status_code == 200
-    assert b"Assessment structure saved" in resp.data or b"saved" in resp.data.lower()
 
-    # Upload marks: Tests 70, 50, 80 (best-2-of-3 -> should displace the 50)
+def progress_of(client, number, module_code="4MTH111"):
+    from backend.models import StudentModule
+    from backend.progress import compute_progress
+    with client.application.app_context():
+        sm = StudentModule.query.join(User).filter(
+            User.student_number == number, StudentModule.module_code == module_code).first()
+        result, _ = compute_progress(sm)
+        return None if result is None else result.progress_percentage
+
+
+def test_full_student_flow(client):
+    make_staff(client, "lect@saassp.local", modules=["4MTH111"])
+    ids = enrol_student(client, "20211234")
+    sm_id = ids["4MTH111"]
+
+    # Before the lecturer configures anything, the student sees a waiting message
+    login(client, "20211234", "password123")
+    page = client.get(f"/student/module/{sm_id}").data.decode()
+    assert "hasn't set up" in page
+    client.get("/logout", follow_redirects=True)
+
+    # The LECTURER configures the module
+    login(client, "lect@saassp.local")
+    resp = client.post("/staff/module/4MTH111/config", data=CONFIG_A, follow_redirects=True)
+    assert b"Assessment structure saved" in resp.data
+
+    # The student enters Tests 70, 50, 80 (best 2 of 3 -> 50 displaced)
+    login(client, "20211234", "password123")
     for pct in ["70", "50", "80"]:
         resp = client.post(f"/student/module/{sm_id}/upload",
-                            data={"category_name": "Tests", "percentage": pct}, follow_redirects=True)
+                           data={"assessment": "Tests::", "percentage": pct}, follow_redirects=True)
         assert resp.status_code == 200
-
-    # Check the module detail page reflects the expected DP progress:
-    # Tests: recorded {70,80} of cap 2, slot_weight = 50/2=25
-    # earned = 0.70*25 + 0.80*25 = 37.5 ; attempted = 50 -> progress = 75%
-    resp = client.get(f"/student/module/{sm_id}")
-    page = resp.data.decode()
+    page = client.get(f"/student/module/{sm_id}").data.decode()
     assert "75.0%" in page or "75%" in page
-    assert "Displaced" in page  # the 50% mark should show as displaced
+    assert "Displaced" in page
+    assert progress_of(client, "20211234") == 75.0
 
-    # Cross-check directly against the DP engine for full confidence
-    from backend.dp_engine import CategoryConfig, marks_by_category_from_student_module, calculate_progress
-    with client.application.app_context():
-        sm = StudentModule.query.get(sm_id)
-        categories = [CategoryConfig(c.category_name, c.dp_weighting, c.total_assessments, c.recorded_count)
-                      for c in sm.categories]
-        marks_by_cat = marks_by_category_from_student_module(sm)
-        result = calculate_progress(categories, marks_by_cat, TestConfig.THRESHOLD_BANDS)
-        assert result.progress_percentage == 75.0
-        assert result.threshold_band_key == "very_safe"
+
+def test_student_cannot_configure_or_use_lecturer_routes(client):
+    ids = enrol_student(client, "20211234")
+    login(client, "20211234", "password123")
+    assert client.post("/staff/module/4MTH111/config", data=CONFIG_A).status_code == 403
+    assert client.get("/advisor/").status_code == 403
+    assert client.get(f"/student/module/{ids['4MTH111']}/configure").status_code == 404
 
 
 def test_weighting_validation_rejects_non_100_percent(client):
-    register_and_login(client)
-    client.post("/student/select-programme", data={"programme_code": "4BSC01"}, follow_redirects=True)
-    client.post("/student/select-modules", data={"module_code": ["4MTH111"]}, follow_redirects=True)
-
-    from backend.models import StudentModule
-    with client.application.app_context():
-        sm_id = StudentModule.query.filter_by(module_code="4MTH111").first().id
-
-    resp = client.post(f"/student/module/{sm_id}/configure", data={
-        "weight_Tests": "50", "total_Tests": "3", "recorded_Tests": "2",
-        "weight_Assignments": "20", "total_Assignments": "2", "recorded_Assignments": "2",
-        "weight_Quizzes": "10", "total_Quizzes": "3", "recorded_Quizzes": "2",  # deliberately wrong (sums to 80)
-        "weight_Practicals": "0", "total_Practicals": "0", "recorded_Practicals": "0",
-        "weight_Tutorials": "0", "total_Tutorials": "0", "recorded_Tutorials": "0",
-    }, follow_redirects=True)
+    make_staff(client, "lect@saassp.local", modules=["4MTH111"])
+    login(client, "lect@saassp.local")
+    bad = dict(CONFIG_A, weight_Quizzes="10")   # sums to 90
+    resp = client.post("/staff/module/4MTH111/config", data=bad, follow_redirects=True)
     assert b"must sum to 100" in resp.data
 
-    from backend.models import AssessmentCategoryConfig
+    from backend.models import ModuleAssessmentConfig
     with client.application.app_context():
-        count = AssessmentCategoryConfig.query.filter_by(student_module_id=sm_id).count()
-        assert count == 0  # nothing was saved
+        assert ModuleAssessmentConfig.query.filter_by(module_code="4MTH111").count() == 0
+
+
+def test_changing_the_structure_recalculates_progress(client):
+    make_staff(client, "lect@saassp.local", modules=["4MTH111"])
+    ids = enrol_student(client, "20211234")
+    login(client, "lect@saassp.local")
+    client.post("/staff/module/4MTH111/config", data=CONFIG_A, follow_redirects=True)
+
+    login(client, "20211234", "password123")
+    client.post(f"/student/module/{ids['4MTH111']}/upload",
+                data={"assessment": "Tests::", "percentage": "80"}, follow_redirects=True)
+    client.post(f"/student/module/{ids['4MTH111']}/upload",
+                data={"assessment": "Quizzes::", "percentage": "40"}, follow_redirects=True)
+    # Tests 80 @ weight 50, Quizzes 40 @ weight 20 -> (0.8*25 + 0.4*10) / (25+10) = 24/35 = 68.57
+    assert progress_of(client, "20211234") == 68.57
+
+    # Lecturer decides Quizzes should weigh far more than Tests
+    login(client, "lect@saassp.local")
+    changed = dict(CONFIG_A, weight_Tests="20", weight_Quizzes="50")
+    resp = client.post("/staff/module/4MTH111/config", data=changed, follow_redirects=True)
+    assert b"recalculated" in resp.data
+    # (0.8*10 + 0.4*25) / (10+25) = 18/35 = 51.43
+    assert progress_of(client, "20211234") == 51.43
+
+
+def test_csv_upload_corrects_student_mark_and_reports_bad_rows(client):
+    import io
+    make_staff(client, "lect@saassp.local", modules=["4MTH111"])
+    ids = enrol_student(client, "20211234")
+    enrol_student(client, "20215555")
+    login(client, "lect@saassp.local")
+    client.post("/staff/module/4MTH111/config", data=CONFIG_A, follow_redirects=True)
+
+    # Student 20211234 enters Test 1 as 90, but only after the lecturer defines it
+    csv_body = ("student_number,mark\n20211234,60\n20215555,75\n99999999,50\n20211234x,abc\n20215555,150\n")
+    # (last row repeats 20215555 with an invalid mark -> skipped, earlier valid row stays)
+    resp = client.post("/staff/module/4MTH111/upload", data={
+        "category_name": "Tests", "assessment_label": "Test 1",
+        "csv_file": (io.BytesIO(csv_body.encode()), "test1.csv")},
+        content_type="multipart/form-data", follow_redirects=True)
+    page = resp.data.decode()
+    assert "2 mark(s) added" in page
+    assert "99999999" in page and "not enrolled" in page
+    assert progress_of(client, "20215555") == 75.0   # lecturer mark alone counts
+
+    # Student now enters their own (inflated) Test 1 = 90 -> lecturer's 60 replaces it
+    login(client, "20211234", "password123")
+    client.post(f"/student/module/{ids['4MTH111']}/upload",
+                data={"assessment": "Tests::Test 1", "percentage": "90"}, follow_redirects=True)
+    assert progress_of(client, "20211234") == 60.0
+    page = client.get(f"/student/module/{ids['4MTH111']}").data.decode()
+    assert "Replaced by lecturer" in page
+
+    # Re-uploading the same assessment updates, it doesn't duplicate
+    login(client, "lect@saassp.local")
+    resp = client.post("/staff/module/4MTH111/upload", data={
+        "category_name": "Tests", "assessment_label": "Test 1",
+        "csv_file": (io.BytesIO(b"student_number,mark\n20211234,70\n"), "t.csv")},
+        content_type="multipart/form-data", follow_redirects=True)
+    assert b"1 updated" in resp.data
+    assert progress_of(client, "20211234") == 70.0
+
+    # Undo: lecturer marks vanish, the student's own 90 counts again
+    from backend.models import ModuleAssessment
+    with client.application.app_context():
+        aid = ModuleAssessment.query.filter_by(label="Test 1").first().id
+    client.post(f"/staff/module/4MTH111/assessment/{aid}/delete", follow_redirects=True)
+    assert progress_of(client, "20211234") == 90.0
+
+
+def test_csv_without_weighting_is_rejected(client):
+    import io
+    make_staff(client, "lect@saassp.local", modules=["4MTH111"])
+    enrol_student(client, "20211234")
+    login(client, "lect@saassp.local")
+    resp = client.post("/staff/module/4MTH111/upload", data={
+        "category_name": "Tests", "assessment_label": "Test 1",
+        "csv_file": (io.BytesIO(b"student_number,mark\n20211234,60\n"), "t.csv")},
+        content_type="multipart/form-data", follow_redirects=True)
+    assert b"no weighting" in resp.data
+    from backend.models import AssessmentMark
+    with client.application.app_context():
+        assert AssessmentMark.query.count() == 0
+
+
+def test_lecturer_cannot_touch_another_lecturers_module(client):
+    with client.application.app_context():
+        db.session.add(Module(module_code="4MTH222", module_name="Linear Algebra"))
+        db.session.add(ProgrammeModule(programme_code="4BSC01", module_code="4MTH222"))
+        db.session.commit()
+    make_staff(client, "a@saassp.local", modules=["4MTH111"])
+    make_staff(client, "b@saassp.local", modules=["4MTH222"])
+    enrol_student(client, "20211234", modules=("4MTH111",))
+    login(client, "b@saassp.local")
+    assert client.get("/staff/module/4MTH111").status_code == 404
+    assert client.post("/staff/module/4MTH111/config", data=CONFIG_A).status_code == 404
+    assert client.post("/staff/module/4MTH111/upload", data={}).status_code == 404
+    # searching for the other lecturer's student finds nothing
+    resp = client.get("/staff/students?student_number=20211234")
+    assert b"No student in your module" in resp.data
+    from backend.models import ModuleAssessmentConfig
+    with client.application.app_context():
+        assert ModuleAssessmentConfig.query.count() == 0
+
+
+def test_lecturer_student_search_finds_own_student(client):
+    make_staff(client, "a@saassp.local", modules=["4MTH111"])
+    enrol_student(client, "20211234")
+    enrol_student(client, "20219999")
+    login(client, "a@saassp.local")
+    resp = client.get("/staff/students?student_number=2021123")
+    assert b"20211234" in resp.data and b"20219999" not in resp.data
+
+
+def test_advisor_searches_any_student_read_only_and_is_logged(client):
+    make_staff(client, "lect@saassp.local", modules=["4MTH111"])
+    make_staff(client, "adv@saassp.local", role="advisor")
+    make_staff(client, "boss@saassp.local", role="admin")
+    ids = enrol_student(client, "20211234")
+    login(client, "lect@saassp.local")
+    client.post("/staff/module/4MTH111/config", data=CONFIG_A, follow_redirects=True)
+    login(client, "20211234", "password123")
+    client.post(f"/student/module/{ids['4MTH111']}/upload",
+                data={"assessment": "Tests::", "percentage": "80"}, follow_redirects=True)
+
+    # Advisor is not assigned to any module yet still finds the student
+    resp = login(client, "adv@saassp.local")
+    assert b"Find a student" in resp.data
+    resp = client.get("/advisor/?student_number=20211234", follow_redirects=True)
+    assert b"20211234" in resp.data and b"4MTH111" in resp.data
+    resp = client.get("/advisor/?student_number=00000000", follow_redirects=True)
+    assert b"No student found" in resp.data
+
+    # Read-only: advisor cannot reach lecturer write routes
+    assert client.post("/staff/module/4MTH111/config", data=CONFIG_A).status_code == 403
+    assert client.get("/staff/students").status_code == 403
+
+    # The administrator can see who looked
+    resp = login(client, "boss@saassp.local")
+    resp = client.get("/admin/access-log")
+    page = resp.data.decode()
+    assert "20211234" in page and "search" in page and "00000000" in page
 
 
 def test_student_logs_in_with_student_number_not_email(client):
@@ -184,3 +344,135 @@ def test_lecturer_only_sees_students_in_assigned_module(client):
     resp = client.get("/staff/students")
     assert b"20218888" not in resp.data
     assert b"no modules assigned" in resp.data.lower()
+
+
+def test_admin_assigns_modules_to_a_lecturer_on_its_own_page(client):
+    make_staff(client, "boss@saassp.local", role="admin")
+    make_staff(client, "lect@saassp.local")
+    from backend.models import LecturerModule
+    with client.application.app_context():
+        lid = User.query.filter_by(email="lect@saassp.local").first().id
+    login(client, "boss@saassp.local")
+    assert b"Assign modules" in client.get("/admin/users").data
+    page = client.get(f"/admin/users/{lid}/modules").data
+    assert b"4MTH111" in page and b"Calculus I" in page
+    resp = client.post(f"/admin/users/{lid}/modules", data={"module_codes": ["4MTH111"]}, follow_redirects=True)
+    assert b"now teaches 1 module" in resp.data and b"4MTH111" in resp.data
+    with client.application.app_context():
+        assert [lm.module_code for lm in LecturerModule.query.filter_by(lecturer_id=lid)] == ["4MTH111"]
+    # lecturers themselves cannot open this page
+    login(client, "lect@saassp.local")
+    assert client.get(f"/admin/users/{lid}/modules").status_code == 403
+
+
+def test_admin_can_delete_students_lecturers_and_advisors(client):
+    make_staff(client, "boss@saassp.local", role="admin")
+    make_staff(client, "lect@saassp.local", modules=["4MTH111"])
+    make_staff(client, "adv@saassp.local", role="advisor")
+    ids = enrol_student(client, "20211234")
+    login(client, "lect@saassp.local")
+    client.post("/staff/module/4MTH111/config", data=CONFIG_A, follow_redirects=True)
+    login(client, "20211234", "password123")
+    client.post(f"/student/module/{ids['4MTH111']}/upload",
+                data={"assessment": "Tests::", "percentage": "80"}, follow_redirects=True)
+    login(client, "adv@saassp.local")
+    client.get("/advisor/?student_number=20211234", follow_redirects=True)
+
+    login(client, "boss@saassp.local")
+    with client.application.app_context():
+        targets = [u.id for u in User.query.filter(User.email.in_(["lect@saassp.local", "adv@saassp.local"]))]
+        targets.append(User.query.filter_by(student_number="20211234").first().id)
+    for uid in targets:
+        resp = client.post("/admin/users", data={"action": "delete", "user_id": uid}, follow_redirects=True)
+        assert b"removed" in resp.data.lower(), resp.data
+    with client.application.app_context():
+        assert User.query.filter(User.id.in_(targets)).count() == 0
+        from backend.models import AccessLog, StudentModule
+        assert StudentModule.query.count() == 0
+        assert AccessLog.query.count() > 0   # the audit trail survives removed accounts
+
+
+def test_forgotten_password_admin_reset_then_user_changes_it(client):
+    make_staff(client, "boss@saassp.local", role="admin")
+    enrol_student(client, "20211234")
+    with client.application.app_context():
+        uid = User.query.filter_by(student_number="20211234").first().id
+
+    login(client, "boss@saassp.local")
+    resp = client.post("/admin/users", data={"action": "reset_password", "user_id": uid,
+                                             "new_password": "short"}, follow_redirects=True)
+    assert b"at least 6" in resp.data
+    resp = client.post("/admin/users", data={"action": "reset_password", "user_id": uid,
+                                             "new_password": "Temp1234"}, follow_redirects=True)
+    assert b"Password reset for" in resp.data
+
+    # old password no longer works, the temporary one does
+    assert b"Invalid" in login(client, "20211234", "password123").data
+    login(client, "20211234", "Temp1234")
+    with client.session_transaction() as sess:
+        assert "_user_id" in sess
+
+    # the student picks their own password
+    resp = client.post("/account/password", data={"current_password": "wrong", "new_password": "Mine5678",
+                                                  "confirm_password": "Mine5678"}, follow_redirects=True)
+    assert b"not correct" in resp.data
+    resp = client.post("/account/password", data={"current_password": "Temp1234", "new_password": "Mine5678",
+                                                  "confirm_password": "Mine5678"}, follow_redirects=True)
+    assert b"Password changed" in resp.data
+    login(client, "20211234", "Mine5678")
+    with client.session_transaction() as sess:
+        assert "_user_id" in sess
+
+
+def test_forgot_password_email_link_flow(client, monkeypatch):
+    sent = []
+    import backend.auth as auth_mod
+    monkeypatch.setattr(auth_mod, "send_email", lambda to, subj, body: sent.append((to, subj, body)) or True)
+
+    register_and_login(client, student_number="20217777")
+    client.post("/account/password", data={"action": "email", "email": "Stu@Example.com"}, follow_redirects=True)
+    client.get("/logout", follow_redirects=True)
+
+    # unknown account: same message, nothing sent
+    resp = client.post("/forgot-password", data={"identifier": "00000000"}, follow_redirects=True)
+    assert b"has been sent" in resp.data and sent == []
+
+    # real account: one e-mail, to the address on file, containing a link
+    resp = client.post("/forgot-password", data={"identifier": "20217777"}, follow_redirects=True)
+    assert b"has been sent" in resp.data and len(sent) == 1
+    to, subject, body = sent[0]
+    assert to == "stu@example.com"
+    link = [w for w in body.split() if "/reset-password/" in w][0]
+    path = "/reset-password/" + link.split("/reset-password/")[1]
+
+    # tampered link is refused
+    assert b"invalid or has expired" in client.get(path[:-3] + "xyz", follow_redirects=True).data
+
+    # good link: mismatching / short passwords refused, then success
+    assert b"match" in client.post(path, data={"new_password": "abcdef", "confirm_password": "abcdeg"}).data
+    resp = client.post(path, data={"new_password": "Brand-new1", "confirm_password": "Brand-new1"}, follow_redirects=True)
+    assert b"Password changed" in resp.data
+    login(client, "20217777", "Brand-new1")
+    with client.session_transaction() as sess:
+        assert "_user_id" in sess
+    client.get("/logout", follow_redirects=True)
+
+    # the link only works once
+    assert b"invalid or has expired" in client.get(path, follow_redirects=True).data
+
+
+def test_forgot_password_expired_link_and_no_email_on_file(client, monkeypatch):
+    sent = []
+    import backend.auth as auth_mod
+    monkeypatch.setattr(auth_mod, "send_email", lambda *a: sent.append(a) or True)
+    register_and_login(client, student_number="20218888")     # registered WITHOUT an e-mail
+    client.get("/logout", follow_redirects=True)
+    resp = client.post("/forgot-password", data={"identifier": "20218888"}, follow_redirects=True)
+    assert b"has been sent" in resp.data and sent == []        # same message, nothing sent
+
+    monkeypatch.setattr(auth_mod, "RESET_MAX_AGE", -1)          # every link counts as expired
+    with client.application.app_context():
+        user = User.query.filter_by(student_number="20218888").first()
+        with client.application.test_request_context():
+            token = auth_mod._make_reset_token(user)
+    assert b"invalid or has expired" in client.get(f"/reset-password/{token}", follow_redirects=True).data

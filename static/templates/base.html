@@ -23,14 +23,18 @@
         <a href="{{ url_for('student.dashboard') }}" class="{{ 'active' if request.endpoint == 'student.dashboard' }}">Dashboard</a>
         <a href="{{ url_for('student.select_programme') }}" class="{{ 'active' if request.endpoint in ['student.select_programme','student.select_modules'] }}">My Modules</a>
       {% elif current_user.role == 'academic_staff' %}
-        <a href="{{ url_for('staff.student_list') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('staff.') }}">Students</a>
+        <a href="{{ url_for('staff.student_list') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('staff.') }}">My Modules &amp; Students</a>
+      {% elif current_user.role == 'advisor' %}
+        <a href="{{ url_for('advisor.search') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('advisor.') }}">Find a Student</a>
       {% elif current_user.role == 'admin' %}
         <a href="{{ url_for('admin.programmes') }}" class="{{ 'active' if request.endpoint == 'admin.programmes' }}">Programme Data</a>
         <a href="{{ url_for('admin.users') }}" class="{{ 'active' if request.endpoint == 'admin.users' }}">User Accounts</a>
+        <a href="{{ url_for('admin.access_log') }}" class="{{ 'active' if request.endpoint == 'admin.access_log' }}">Access Log</a>
       {% endif %}
     </div>
     <div class="sidebar-footer">
       <div class="who">{{ current_user.name }}<br><span class="role-tag">{{ current_user.role.replace('_',' ') }}</span></div>
+      <a href="{{ url_for('auth.change_password') }}" class="logout-link" style="display:block; margin-bottom:6px;">Change password</a>
       <a href="{{ url_for('auth.logout') }}" class="logout-link">Log out</a>
     </div>
   </nav>

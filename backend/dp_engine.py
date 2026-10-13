@@ -166,12 +166,40 @@ def weighting_sum(categories: Sequence[CategoryConfig]) -> float:
     return sum(c.dp_weighting for c in categories)
 
 
+def split_effective_marks(marks) -> tuple:
+    """Decide which of a student's stored marks actually count.
+
+    `marks` are ORM-like objects with .id, .source ("student"|"lecturer"),
+    .category_name and .assessment_label. A lecturer's mark REPLACES any
+    student-entered mark for the same assessment (same category + label),
+    which is how the lecturer's real marks "correct" what students typed.
+    Returns (effective, replaced) - two lists of the same objects.
+    """
+    lecturer_keys = {
+        (m.category_name, (m.assessment_label or "").strip().lower())
+        for m in marks
+        if getattr(m, "source", "student") == "lecturer" and (m.assessment_label or "").strip()
+    }
+    effective, replaced = [], []
+    for m in marks:
+        key = (m.category_name, (m.assessment_label or "").strip().lower())
+        is_student = getattr(m, "source", "student") != "lecturer"
+        if is_student and key in lecturer_keys:
+            replaced.append(m)
+        else:
+            effective.append(m)
+    return effective, replaced
+
+
 def marks_by_category_from_student_module(student_module) -> dict:
-    """Shape a StudentModule ORM object's marks into the
+    """Shape a StudentModule ORM object's EFFECTIVE marks into the
     {category_name: [MarkRecord, ...]} form calculate_progress() and
-    classify_trend() expect. Shared by the student and staff blueprints."""
+    classify_trend() expect (student marks replaced by a lecturer mark for the
+    same assessment are left out). Shared by the student, staff and advisor
+    blueprints."""
+    effective, _ = split_effective_marks(list(student_module.marks))
     result: dict = {}
-    for m in student_module.marks:
+    for m in effective:
         result.setdefault(m.category_name, []).append(
             MarkRecord(id=m.id, category_name=m.category_name,
                        percentage=float(m.percentage_achieved), sequence=m.sequence)

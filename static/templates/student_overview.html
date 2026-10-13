@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ student.name }} - SAASSP{% endblock %}
+{% block content %}
+<a href="{{ back_url }}" style="font-size: 13px; color: var(--muted); display:block; margin-bottom: 10px;">&larr; {{ back_label }}</a>
+<div class="section-title">{{ student.name }}</div>
+<p class="text-muted" style="margin-top:-8px;">Student number {{ student.student_number }} &mdash; read-only view</p>
+<div class="module-grid">
+  {% for sm, result in summaries %}
+  <a href="{{ url_for(progress_endpoint, student_id=student.id, sm_id=sm.id) }}" class="card" style="text-decoration:none; color:inherit; display:block;">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.4px; color: var(--muted);">{{ sm.module_code }}</div>
+      {% if result %}<span class="band-pill band-{{ result.threshold_band_key }}">{{ result.threshold_band_label }}</span>
+      {% else %}<span class="band-pill" style="background:#ECE8DA; color: var(--muted);">Not set up</span>{% endif %}
+    </div>
+    <div style="font-size: 15px; font-weight: 700; margin-bottom: 6px;">{{ sm.module.module_name }}</div>
+    {% if result %}
+    <div class="d-flex align-items-end gap-3">
+      <div style="font-size: 28px; font-weight: 800; line-height:1; color: var(--navy);">{{ result.progress_percentage }}%</div>
+      <div class="progress-bar-track flex-grow-1 mb-1"><div class="progress-bar-fill" style="width: {{ result.progress_percentage }}%; background: var(--navy);"></div></div>
+    </div>
+    {% endif %}
+  </a>
+  {% else %}
+  <p class="text-muted">This student hasn't selected any modules{% if current_user.role == 'academic_staff' %} that you teach{% endif %} yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

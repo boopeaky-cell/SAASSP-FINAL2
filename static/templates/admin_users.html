@@ -17,7 +17,8 @@
           <label class="form-label">Role</label>
           <select name="role" class="form-select form-select-sm">
             <option value="student">Student</option>
-            <option value="academic_staff">Academic Staff</option>
+            <option value="academic_staff">Academic Staff (Lecturer)</option>
+            <option value="advisor">Advisor</option>
             <option value="admin">System Administrator</option>
           </select>
         </div>
@@ -26,7 +27,7 @@
           <input type="text" name="student_number" class="form-control form-control-sm" placeholder="e.g. 20211234">
         </div>
         <div class="mb-2">
-          <label class="form-label">Email <span class="text-muted" style="font-weight:400; font-size:11px;">(Academic Staff / Admin)</span></label>
+          <label class="form-label">Email <span class="text-muted" style="font-weight:400; font-size:11px;">(Lecturer / Advisor / Admin)</span></label>
           <input type="email" name="email" class="form-control form-control-sm">
         </div>
         <div class="mb-3">
@@ -53,30 +54,28 @@
                 <input type="hidden" name="user_id" value="{{ u.id }}">
                 <select name="role" class="form-select form-select-sm" onchange="this.form.submit()" style="width: 150px;">
                   <option value="student" {{ 'selected' if u.role=='student' }}>Student</option>
-                  <option value="academic_staff" {{ 'selected' if u.role=='academic_staff' }}>Academic Staff</option>
+                  <option value="academic_staff" {{ 'selected' if u.role=='academic_staff' }}>Academic Staff (Lecturer)</option>
+                  <option value="advisor" {{ 'selected' if u.role=='advisor' }}>Advisor</option>
                   <option value="admin" {{ 'selected' if u.role=='admin' }}>System Administrator</option>
                 </select>
               </form>
             </td>
             <td>
               {% if u.role == 'academic_staff' %}
-                <form method="post" class="d-flex flex-wrap gap-2 align-items-center">
-                  <input type="hidden" name="action" value="assign_modules">
-                  <input type="hidden" name="user_id" value="{{ u.id }}">
-                  {% set assigned = assigned_by_lecturer.get(u.id, []) %}
-                  {% for m in all_modules %}
-                    <label style="font-size:12px; font-weight:400; display:flex; align-items:center; gap:3px;">
-                      <input type="checkbox" name="module_codes" value="{{ m.module_code }}" {{ 'checked' if m.module_code in assigned }}>
-                      {{ m.module_code }}
-                    </label>
-                  {% endfor %}
-                  <button type="submit" class="btn btn-outline-navy btn-sm">Save</button>
-                </form>
+                {% set assigned = assigned_by_lecturer.get(u.id, []) %}
+                <div style="font-size:12.5px; margin-bottom:4px;">{% if assigned %}{{ assigned|sort|join(', ') }}{% else %}<span class="text-muted">none yet</span>{% endif %}</div>
+                <a href="{{ url_for('admin.lecturer_modules', user_id=u.id) }}" class="btn btn-outline-navy btn-sm">Assign modules</a>
               {% else %}
                 <span class="text-muted">—</span>
               {% endif %}
             </td>
             <td>
+              <form method="post" class="d-flex gap-1 mb-1">
+                <input type="hidden" name="action" value="reset_password">
+                <input type="hidden" name="user_id" value="{{ u.id }}">
+                <input type="text" name="new_password" class="form-control form-control-sm" placeholder="New password" style="width:120px;" required minlength="6">
+                <button type="submit" class="btn btn-outline-navy btn-sm" style="white-space:nowrap;">Reset password</button>
+              </form>
               <form method="post" onsubmit="return confirm('Remove this account?');">
                 <input type="hidden" name="action" value="delete">
                 <input type="hidden" name="user_id" value="{{ u.id }}">

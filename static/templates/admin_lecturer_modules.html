@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Assign modules - SAASSP{% endblock %}
+{% block content %}
+<a href="{{ url_for('admin.users') }}" style="font-size: 13px; color: var(--muted); display:block; margin-bottom: 10px;">&larr; Back to user accounts</a>
+<div class="section-title">Modules taught by {{ lecturer.name }}</div>
+<p class="text-muted">Tick the module(s) this lecturer teaches, then press <b>Save</b>. Use the search box to find a module by code or name.</p>
+
+<form method="post" style="max-width: 720px;">
+  <input type="text" id="filter" class="form-control mb-2" placeholder="Search modules, e.g. 4MTH or Calculus" autofocus>
+  <div class="card" style="max-height: 420px; overflow-y: auto; padding: 8px 16px;">
+    {% for m in all_modules %}
+    <label class="mod-row" style="display:flex; gap:10px; align-items:center; padding:6px 0; border-bottom:1px solid var(--card-border); font-weight:400; cursor:pointer;">
+      <input type="checkbox" name="module_codes" value="{{ m.module_code }}" {{ 'checked' if m.module_code in assigned }}>
+      <span style="font-weight:700; width:90px;">{{ m.module_code }}</span>
+      <span>{{ m.module_name }}</span>
+    </label>
+    {% endfor %}
+  </div>
+  <div class="d-flex align-items-center justify-content-between mt-3">
+    <span id="count" class="text-muted" style="font-size:13px;"></span>
+    <button type="submit" class="btn btn-navy text-white px-5 py-2">Save</button>
+  </div>
+</form>
+
+<script>
+  var rows = document.querySelectorAll('.mod-row');
+  var boxes = document.querySelectorAll('input[name="module_codes"]');
+  function count() { document.getElementById('count').textContent = document.querySelectorAll('input[name="module_codes"]:checked').length + ' selected'; }
+  document.getElementById('filter').addEventListener('input', function () {
+    var q = this.value.toLowerCase();
+    rows.forEach(function (r) { r.style.display = r.textContent.toLowerCase().indexOf(q) === -1 ? 'none' : 'flex'; });
+  });
+  boxes.forEach(function (b) { b.addEventListener('change', count); });
+  count();
+</script>
+{% endblock %}

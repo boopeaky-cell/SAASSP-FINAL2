@@ -29,9 +29,22 @@ class Config:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # AI Feedback Service (see SAASSP_SDD.docx Section 3.1, AI Feedback Service)
+    # AI Feedback Service (see SAASSP_SDD.docx Section 3.1, AI Feedback Service).
+    # Groq is tried first (fast, generous free-tier limits); Gemini is only a
+    # fallback for when Groq is unavailable or its call fails.
+    GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+    GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
     GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+
+    # E-mail (password reset links). Leave MAIL_SERVER empty to just print the
+    # e-mail in the terminal instead of sending it. See backend/mailer.py.
+    MAIL_SERVER = os.environ.get("MAIL_SERVER", "")
+    MAIL_PORT = int(os.environ.get("MAIL_PORT", "587") or 587)
+    MAIL_USERNAME = os.environ.get("MAIL_USERNAME", "")
+    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", "")
+    MAIL_FROM = os.environ.get("MAIL_FROM", "")
 
     # Six fixed threshold bands - see SAASSP_SRS.docx Section 3.3.1
     THRESHOLD_BANDS = [

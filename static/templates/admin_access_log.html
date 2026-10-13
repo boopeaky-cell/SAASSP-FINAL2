@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Access Log - SAASSP{% endblock %}
+{% block content %}
+<div class="section-title">Access log</div>
+<p class="text-muted">Every time a lecturer or advisor opens a student's record, it is recorded here (latest 300).</p>
+<form method="get" class="d-flex gap-2 mb-3" style="max-width: 420px;">
+  <input type="text" name="student_number" value="{{ q }}" class="form-control form-control-sm" placeholder="Filter by student number">
+  <button type="submit" class="btn btn-navy text-white btn-sm px-3">Filter</button>
+</form>
+<div class="card" style="padding:0; overflow:hidden;">
+  <table class="saassp-table">
+    <thead><tr><th>When (UTC)</th><th>Who</th><th>Role</th><th>Action</th><th>Student no.</th><th>Module</th></tr></thead>
+    <tbody>
+    {% for e in entries %}
+      <tr>
+        <td>{{ e.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ e.viewer_name }}</td>
+        <td>{{ e.viewer_role.replace('_',' ') }}</td><td>{{ e.action.replace('_',' ') }}</td>
+        <td>{{ e.student_number or '—' }}</td><td>{{ e.module_code or '—' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="text-muted">No entries yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
