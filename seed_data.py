@@ -85,12 +85,6 @@ def ensure_default_accounts():
             db.session.add(LecturerModule(lecturer_id=u.id, module_code=first_module.module_code))
         print("Created academic staff account: staff@saassp.local / staff123")
 
-    if not User.query.filter_by(email="advisor@saassp.local").first():
-        u = User(name="Demo Academic Advisor", email="advisor@saassp.local", role="advisor")
-        u.set_password("advisor123")
-        db.session.add(u)
-        print("Created advisor account: advisor@saassp.local / advisor123")
-
     db.session.commit()
 
 

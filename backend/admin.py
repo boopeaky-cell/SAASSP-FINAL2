@@ -94,12 +94,12 @@ def users():
             student_number = request.form.get("student_number", "").strip()
             email = request.form.get("email", "").strip().lower()
 
-            if role not in ("student", "academic_staff", "advisor", "admin"):
+            if role not in ("student", "academic_staff", "admin"):
                 flash("Choose a valid role.", "error")
             elif role == "student" and not student_number:
                 flash("A Student account needs a student number.", "error")
             elif role != "student" and not email:
-                flash("Academic Staff, Advisor and System Administrator accounts need an email address.", "error")
+                flash("Academic Staff and System Administrator accounts need an email address.", "error")
             elif student_number and User.query.filter_by(student_number=student_number).first():
                 flash("A user with that student number already exists.", "error")
             elif email and User.query.filter_by(email=email).first():
@@ -117,7 +117,7 @@ def users():
             user_id = request.form.get("user_id")
             new_role = request.form.get("role")
             u = User.query.get(user_id)
-            if u and new_role in ("student", "academic_staff", "advisor", "admin"):
+            if u and new_role in ("student", "academic_staff", "admin"):
                 u.role = new_role
                 db.session.commit()
                 flash(f"Updated {u.name}'s role to {new_role}.", "success")

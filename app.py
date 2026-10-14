@@ -23,7 +23,7 @@ Frameworks / libraries used:
 """
 import os
 
-from flask import Flask, abort, redirect, request, url_for
+from flask import Flask, abort, flash, redirect, request, url_for
 from flask_login import current_user
 
 from backend import db, login_manager
@@ -68,13 +68,11 @@ def create_app(config_object=None):
     from backend.auth import auth_bp
     from backend.student import student_bp
     from backend.staff import staff_bp
-    from backend.advisor import advisor_bp
     from backend.admin import admin_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(student_bp)
     app.register_blueprint(staff_bp)
-    app.register_blueprint(advisor_bp)
     app.register_blueprint(admin_bp)
 
     # The HTML templates live inside static/, but they are server-side pages,
@@ -91,10 +89,12 @@ def create_app(config_object=None):
                 return redirect(url_for("student.dashboard"))
             if current_user.role == "academic_staff":
                 return redirect(url_for("staff.student_list"))
-            if current_user.role == "advisor":
-                return redirect(url_for("advisor.search"))
             if current_user.role == "admin":
                 return redirect(url_for("admin.programmes"))
+            # Unknown/retired role (e.g. an old "advisor" account): don't loop, log out.
+            from flask_login import logout_user
+            logout_user()
+            flash("This account type is no longer in use. Please ask an administrator.", "error")
         return redirect(url_for("auth.login"))
 
     # ---- Database tables -------------------------------------------------

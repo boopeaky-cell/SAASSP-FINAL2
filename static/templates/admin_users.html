@@ -18,7 +18,6 @@
           <select name="role" class="form-select form-select-sm">
             <option value="student">Student</option>
             <option value="academic_staff">Academic Staff (Lecturer)</option>
-            <option value="advisor">Advisor</option>
             <option value="admin">System Administrator</option>
           </select>
         </div>
@@ -27,7 +26,7 @@
           <input type="text" name="student_number" class="form-control form-control-sm" placeholder="e.g. 20211234">
         </div>
         <div class="mb-2">
-          <label class="form-label">Email <span class="text-muted" style="font-weight:400; font-size:11px;">(Lecturer / Advisor / Admin)</span></label>
+          <label class="form-label">Email <span class="text-muted" style="font-weight:400; font-size:11px;">(Lecturer / Admin)</span></label>
           <input type="email" name="email" class="form-control form-control-sm">
         </div>
         <div class="mb-3">
@@ -55,7 +54,6 @@
                 <select name="role" class="form-select form-select-sm" onchange="this.form.submit()" style="width: 150px;">
                   <option value="student" {{ 'selected' if u.role=='student' }}>Student</option>
                   <option value="academic_staff" {{ 'selected' if u.role=='academic_staff' }}>Academic Staff (Lecturer)</option>
-                  <option value="advisor" {{ 'selected' if u.role=='advisor' }}>Advisor</option>
                   <option value="admin" {{ 'selected' if u.role=='admin' }}>System Administrator</option>
                 </select>
               </form>

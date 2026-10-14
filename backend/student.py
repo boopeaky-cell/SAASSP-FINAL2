@@ -6,22 +6,25 @@ Implements SAASSP_SRS.docx use cases:
 3.2.5 Receive AI-Assisted Feedback (invoked from upload_mark)
 3.2.6 View DP Progress Dashboard
 """
+from datetime import datetime, timedelta
+
 from flask import (
     Blueprint, render_template, redirect, url_for, request, flash,
-    session, current_app, abort
+    session, current_app, abort, jsonify
 )
 from flask_login import login_required, current_user
 
 from backend import db
 from backend.models import (
     Programme, Module, ProgrammeModule, StudentModule,
-    ModuleAssessment, AssessmentMark, FeedbackMessage,
+    ModuleAssessment, AssessmentMark, FeedbackMessage, ChatMessage,
 )
 from backend.dp_engine import classify_trend
 from backend.progress import (
     compute_progress, mark_rows, refresh_recorded_flags, next_sequence,
 )
 from backend.feedback_service import generate_feedback
+from backend.advisor_chat import advisor_reply, MAX_MESSAGE_CHARS, MESSAGES_PER_HOUR
 
 student_bp = Blueprint("student", __name__, url_prefix="/student")
 
@@ -232,3 +235,63 @@ def upload_mark(sm_id):
     else:
         flash("Mark uploaded and DP progress updated. AI feedback wasn't available this time.", "info")
     return redirect(url_for("student.module_detail", sm_id=sm.id))
+
+
+# ---------------------------------------------------------------------
+# Advisor chatbot (sees THIS student's progress in all their modules)
+# ---------------------------------------------------------------------
+
+@student_bp.route("/advisor")
+@login_required
+def advisor():
+    _require_student()
+    messages = (ChatMessage.query.filter_by(student_id=current_user.id)
+                .order_by(ChatMessage.id.desc()).limit(60).all())
+    messages.reverse()
+    has_modules = StudentModule.query.filter_by(student_id=current_user.id).count() > 0
+    return render_template("student_advisor.html", messages=messages, has_modules=has_modules,
+                           max_chars=MAX_MESSAGE_CHARS)
+
+
+@student_bp.route("/advisor/send", methods=["POST"])
+@login_required
+def advisor_send():
+    _require_student()
+    data = request.get_json(silent=True) or {}
+    text = str(data.get("message", "")).strip()
+    if not text:
+        return jsonify(error="Type a message first."), 400
+    if len(text) > MAX_MESSAGE_CHARS:
+        return jsonify(error=f"Please keep messages under {MAX_MESSAGE_CHARS} characters."), 400
+
+    since = datetime.utcnow() - timedelta(hours=1)
+    recent_count = ChatMessage.query.filter(
+        ChatMessage.student_id == current_user.id, ChatMessage.role == "user",
+        ChatMessage.created_at >= since).count()
+    if recent_count >= MESSAGES_PER_HOUR:
+        return jsonify(error="You've sent a lot of messages in the last hour. "
+                             "Please take a short break and try again later."), 429
+
+    prior = (ChatMessage.query.filter_by(student_id=current_user.id)
+             .order_by(ChatMessage.id.desc()).limit(10).all())
+    history = [{"role": m.role, "content": m.content} for m in reversed(prior)]
+
+    reply, used_ai = advisor_reply(
+        current_user, history, text,
+        groq_api_key=current_app.config["GROQ_API_KEY"], groq_model=current_app.config["GROQ_MODEL"],
+        gemini_api_key=current_app.config["GEMINI_API_KEY"], gemini_model=current_app.config["GEMINI_MODEL"],
+    )
+    db.session.add(ChatMessage(student_id=current_user.id, role="user", content=text))
+    db.session.add(ChatMessage(student_id=current_user.id, role="assistant", content=reply))
+    db.session.commit()
+    return jsonify(reply=reply, ai=used_ai)
+
+
+@student_bp.route("/advisor/clear", methods=["POST"])
+@login_required
+def advisor_clear():
+    _require_student()
+    ChatMessage.query.filter_by(student_id=current_user.id).delete()
+    db.session.commit()
+    flash("Conversation cleared.", "success")
+    return redirect(url_for("student.advisor"))

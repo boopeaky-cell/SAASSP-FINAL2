@@ -21,12 +21,15 @@ class User(db.Model, UserMixin):
     # level, since the column is shared across all three roles.
     student_number = db.Column(db.String(20), unique=True, nullable=True)  # StudentNumber*#
     email = db.Column(db.String(100), unique=True, nullable=True)  # Email*#
-    role = db.Column(db.String(20), nullable=False)       # Role*# : student|academic_staff|advisor|admin
+    role = db.Column(db.String(20), nullable=False)       # Role*# : student|academic_staff|admin
     password_hash = db.Column(db.String(255), nullable=False)  # PasswordHash*^
 
     student_modules = db.relationship("StudentModule", backref="student", lazy=True,
                                        foreign_keys="StudentModule.student_id",
                                        cascade="all, delete-orphan")
+    chat_messages = db.relationship("ChatMessage", backref="student", lazy=True,
+                                    foreign_keys="ChatMessage.student_id",
+                                    cascade="all, delete-orphan")
     taught_modules = db.relationship("LecturerModule", backref="lecturer", lazy=True,
                                       foreign_keys="LecturerModule.lecturer_id",
                                       cascade="all, delete-orphan")
@@ -200,3 +203,14 @@ class AccessLog(db.Model):
     student_number = db.Column(db.String(20))
     module_code = db.Column(db.String(10), nullable=True)
     action = db.Column(db.String(30))      # search | view_student | view_progress
+
+
+class ChatMessage(db.Model):
+    """One message in a student's conversation with the Advisor chatbot."""
+    __tablename__ = "chat_messages"
+
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    role = db.Column(db.String(10), nullable=False)       # "user" | "assistant"
+    content = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)

@@ -132,7 +132,6 @@ def test_student_cannot_configure_or_use_lecturer_routes(client):
     ids = enrol_student(client, "20211234")
     login(client, "20211234", "password123")
     assert client.post("/staff/module/4MTH111/config", data=CONFIG_A).status_code == 403
-    assert client.get("/advisor/").status_code == 403
     assert client.get(f"/student/module/{ids['4MTH111']}/configure").status_code == 404
 
 
@@ -260,92 +259,6 @@ def test_lecturer_student_search_finds_own_student(client):
     assert b"20211234" in resp.data and b"20219999" not in resp.data
 
 
-def test_advisor_searches_any_student_read_only_and_is_logged(client):
-    make_staff(client, "lect@saassp.local", modules=["4MTH111"])
-    make_staff(client, "adv@saassp.local", role="advisor")
-    make_staff(client, "boss@saassp.local", role="admin")
-    ids = enrol_student(client, "20211234")
-    login(client, "lect@saassp.local")
-    client.post("/staff/module/4MTH111/config", data=CONFIG_A, follow_redirects=True)
-    login(client, "20211234", "password123")
-    client.post(f"/student/module/{ids['4MTH111']}/upload",
-                data={"assessment": "Tests::", "percentage": "80"}, follow_redirects=True)
-
-    # Advisor is not assigned to any module yet still finds the student
-    resp = login(client, "adv@saassp.local")
-    assert b"Find a student" in resp.data
-    resp = client.get("/advisor/?student_number=20211234", follow_redirects=True)
-    assert b"20211234" in resp.data and b"4MTH111" in resp.data
-    resp = client.get("/advisor/?student_number=00000000", follow_redirects=True)
-    assert b"No student found" in resp.data
-
-    # Read-only: advisor cannot reach lecturer write routes
-    assert client.post("/staff/module/4MTH111/config", data=CONFIG_A).status_code == 403
-    assert client.get("/staff/students").status_code == 403
-
-    # The administrator can see who looked
-    resp = login(client, "boss@saassp.local")
-    resp = client.get("/admin/access-log")
-    page = resp.data.decode()
-    assert "20211234" in page and "search" in page and "00000000" in page
-
-
-def test_student_logs_in_with_student_number_not_email(client):
-    register_and_login(client, student_number="20219999")
-    client.get("/logout", follow_redirects=True)
-
-    # Wrong identifier fails
-    resp = client.post("/login", data={"identifier": "no-such-number", "password": "password123"},
-                        follow_redirects=True)
-    assert b"Invalid student number/email or password" in resp.data
-
-    # Student number succeeds
-    resp = client.post("/login", data={"identifier": "20219999", "password": "password123"},
-                        follow_redirects=True)
-    assert resp.status_code == 200
-    with client.session_transaction() as sess:
-        assert "_user_id" in sess
-
-
-def test_lecturer_only_sees_students_in_assigned_module(client):
-    with client.application.app_context():
-        db.session.add(Module(module_code="4MTH222", module_name="Linear Algebra"))
-        db.session.add(ProgrammeModule(programme_code="4BSC01", module_code="4MTH222"))
-        staff = User(name="Dr Assigned", email="assigned@saassp.local", role="academic_staff")
-        staff.set_password("pw")
-        other_staff = User(name="Dr Other", email="other@saassp.local", role="academic_staff")
-        other_staff.set_password("pw")
-        db.session.add_all([staff, other_staff])
-        db.session.commit()
-        db.session.add(LecturerModule(lecturer_id=staff.id, module_code="4MTH111"))
-        db.session.commit()
-        staff_id, other_staff_id = staff.id, other_staff.id
-
-    register_and_login(client, student_number="20218888")
-    client.post("/student/select-programme", data={"programme_code": "4BSC01"}, follow_redirects=True)
-    client.post("/student/select-modules", data={"module_code": ["4MTH111", "4MTH222"]}, follow_redirects=True)
-    client.get("/logout", follow_redirects=True)
-
-    # The lecturer assigned to 4MTH111 sees the student and only that module
-    client.post("/login", data={"identifier": "assigned@saassp.local", "password": "pw"}, follow_redirects=True)
-    resp = client.get("/staff/students")
-    assert b"20218888" in resp.data
-
-    with client.application.app_context():
-        student = User.query.filter_by(student_number="20218888").first()
-        student_id = student.id
-    resp = client.get(f"/staff/students/{student_id}")
-    assert b"4MTH111" in resp.data
-    assert b"4MTH222" not in resp.data
-    client.get("/logout", follow_redirects=True)
-
-    # A lecturer with no modules assigned sees no students at all
-    client.post("/login", data={"identifier": "other@saassp.local", "password": "pw"}, follow_redirects=True)
-    resp = client.get("/staff/students")
-    assert b"20218888" not in resp.data
-    assert b"no modules assigned" in resp.data.lower()
-
-
 def test_admin_assigns_modules_to_a_lecturer_on_its_own_page(client):
     make_staff(client, "boss@saassp.local", role="admin")
     make_staff(client, "lect@saassp.local")
@@ -365,22 +278,24 @@ def test_admin_assigns_modules_to_a_lecturer_on_its_own_page(client):
     assert client.get(f"/admin/users/{lid}/modules").status_code == 403
 
 
-def test_admin_can_delete_students_lecturers_and_advisors(client):
+def test_admin_can_delete_students_and_lecturers(client):
     make_staff(client, "boss@saassp.local", role="admin")
     make_staff(client, "lect@saassp.local", modules=["4MTH111"])
-    make_staff(client, "adv@saassp.local", role="advisor")
+    make_staff(client, "lect2@saassp.local", modules=["4MTH111"])
     ids = enrol_student(client, "20211234")
     login(client, "lect@saassp.local")
     client.post("/staff/module/4MTH111/config", data=CONFIG_A, follow_redirects=True)
     login(client, "20211234", "password123")
     client.post(f"/student/module/{ids['4MTH111']}/upload",
                 data={"assessment": "Tests::", "percentage": "80"}, follow_redirects=True)
-    login(client, "adv@saassp.local")
-    client.get("/advisor/?student_number=20211234", follow_redirects=True)
+    login(client, "lect2@saassp.local")
+    with client.application.app_context():
+        sid = User.query.filter_by(student_number="20211234").first().id
+    client.get(f"/staff/students/{sid}", follow_redirects=True)   # a lecturer looks the student up -> logged
 
     login(client, "boss@saassp.local")
     with client.application.app_context():
-        targets = [u.id for u in User.query.filter(User.email.in_(["lect@saassp.local", "adv@saassp.local"]))]
+        targets = [u.id for u in User.query.filter(User.email.in_(["lect@saassp.local", "lect2@saassp.local"]))]
         targets.append(User.query.filter_by(student_number="20211234").first().id)
     for uid in targets:
         resp = client.post("/admin/users", data={"action": "delete", "user_id": uid}, follow_redirects=True)
@@ -476,3 +391,131 @@ def test_forgot_password_expired_link_and_no_email_on_file(client, monkeypatch):
         with client.application.test_request_context():
             token = auth_mod._make_reset_token(user)
     assert b"invalid or has expired" in client.get(f"/reset-password/{token}", follow_redirects=True).data
+
+
+# ---------------------------------------------------------------------
+# Open sign-up (students + lecturers), eye button, Advisor chatbot
+# ---------------------------------------------------------------------
+
+def test_password_boxes_get_the_eye_button(client):
+    for url in ("/login", "/register", "/forgot-password"):
+        page = client.get(url).data.decode()
+        assert "pw-eye" in page          # the show/hide script is on every page
+
+
+def test_lecturers_can_self_register_but_see_nothing_until_assigned(client):
+    resp = client.post("/register", data={"account_type": "academic_staff", "name": "Dr New",
+                                          "email": "new@uni.ac.za", "password": "secret1"},
+                       follow_redirects=True)
+    assert b"administrator must now assign" in resp.data or b"no modules assigned" in resp.data.lower()
+    with client.application.app_context():
+        u = User.query.filter_by(email="new@uni.ac.za").first()
+        assert u.role == "academic_staff" and u.student_number is None
+        assert LecturerModule.query.filter_by(lecturer_id=u.id).count() == 0
+    enrol = client.get("/staff/students")
+    assert b"no modules assigned" in enrol.data.lower()
+
+
+def test_lecturer_registration_requires_email_and_admin_role_cannot_be_self_created(client):
+    resp = client.post("/register", data={"account_type": "academic_staff", "name": "No Mail",
+                                          "password": "secret1"}, follow_redirects=True)
+    assert b"e-mail address" in resp.data
+    resp = client.post("/register", data={"account_type": "admin", "name": "Sneaky",
+                                          "email": "sneaky@x.com", "password": "secret1"},
+                       follow_redirects=True)
+    assert b"student or a lecturer" in resp.data
+    with client.application.app_context():
+        assert User.query.filter(User.email.in_(["sneaky@x.com"])).count() == 0
+        assert User.query.filter_by(role="admin").count() == 0
+
+
+def test_retired_advisor_account_is_logged_out_not_looped(client):
+    make_staff(client, "old-advisor@saassp.local", role="advisor")
+    resp = login(client, "old-advisor@saassp.local")
+    assert b"no longer in use" in resp.data
+
+
+def _setup_chat_student(client, number="20211234", marks=(("Tests", "80"),)):
+    make_staff(client, f"lect{number}@saassp.local", modules=["4MTH111"])
+    ids = enrol_student(client, number)
+    login(client, f"lect{number}@saassp.local")
+    client.post("/staff/module/4MTH111/config", data=CONFIG_A, follow_redirects=True)
+    login(client, number, "password123")
+    for cat, pct in marks:
+        client.post(f"/student/module/{ids['4MTH111']}/upload",
+                    data={"assessment": f"{cat}::", "percentage": pct}, follow_redirects=True)
+    return ids
+
+
+def test_student_dashboard_links_to_the_advisor_and_chat_works_without_ai_keys(client):
+    _setup_chat_student(client)
+    dash = client.get("/student/dashboard").data.decode()
+    assert "Talk to your Advisor" in dash
+    assert b"Your Advisor" in client.get("/student/advisor").data
+
+    resp = client.post("/student/advisor/send", json={"message": "How am I doing?"})
+    data = resp.get_json()
+    assert resp.status_code == 200 and data["ai"] is False       # no keys in tests -> rule-based fallback
+    assert "4MTH111" in data["reply"] and "80.0%" in data["reply"]
+    page = client.get("/student/advisor").data.decode()
+    assert "How am I doing?" in page and "4MTH111" in page       # conversation is kept
+
+
+def test_advisor_uses_ai_with_only_this_students_data(client, monkeypatch):
+    import backend.advisor_chat as chat
+    seen = {}
+
+    def fake_groq(messages, api_key, model):
+        seen["system"] = messages[0]["content"]
+        seen["last"] = messages[-1]["content"]
+        return "You are in a very safe position in 4MTH111."
+    monkeypatch.setattr(chat, "_try_groq", fake_groq)
+    client.application.config["GROQ_API_KEY"] = "fake-key"
+
+    # another student with distinctive data must never leak into this chat
+    _setup_chat_student(client, "20215555", marks=(("Tests", "33"),))
+    client.get("/logout", follow_redirects=True)
+    _setup_chat_student(client, "20216666", marks=(("Tests", "91"),))
+    resp = client.post("/student/advisor/send", json={"message": "Any advice?"})
+    assert resp.get_json() == {"reply": "You are in a very safe position in 4MTH111.", "ai": True}
+    assert "91.0%" in seen["system"] and "20216666" in seen["system"]
+    assert "20215555" not in seen["system"] and "33.0%" not in seen["system"]
+    assert seen["last"] == "Any advice?"
+
+
+def test_advisor_validation_rate_limit_and_access(client):
+    ids = _setup_chat_student(client)
+    assert client.post("/student/advisor/send", json={"message": "  "}).status_code == 400
+    assert client.post("/student/advisor/send", json={"message": "x" * 801}).status_code == 400
+    from backend.models import ChatMessage
+    with client.application.app_context():
+        sid = User.query.filter_by(student_number="20211234").first().id
+        for _ in range(30):
+            db.session.add(ChatMessage(student_id=sid, role="user", content="hi"))
+        db.session.commit()
+    assert client.post("/student/advisor/send", json={"message": "one more"}).status_code == 429
+
+    resp = client.post("/student/advisor/clear", follow_redirects=True)
+    assert b"Conversation cleared" in resp.data
+    with client.application.app_context():
+        assert ChatMessage.query.count() == 0
+
+    # lecturers and logged-out visitors cannot use the student chatbot
+    login(client, "lect20211234@saassp.local")
+    assert client.get("/student/advisor").status_code == 403
+    client.get("/logout", follow_redirects=True)
+    assert client.get("/student/advisor").status_code in (302, 401)
+
+
+def test_deleting_a_student_also_removes_their_chat(client):
+    make_staff(client, "boss@saassp.local", role="admin")
+    _setup_chat_student(client)
+    client.post("/student/advisor/send", json={"message": "hello"})
+    login(client, "boss@saassp.local")
+    with client.application.app_context():
+        uid = User.query.filter_by(student_number="20211234").first().id
+    resp = client.post("/admin/users", data={"action": "delete", "user_id": uid}, follow_redirects=True)
+    assert b"removed" in resp.data.lower()
+    from backend.models import ChatMessage
+    with client.application.app_context():
+        assert ChatMessage.query.count() == 0

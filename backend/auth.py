@@ -46,40 +46,61 @@ def login():
 
 @auth_bp.route("/register", methods=["GET", "POST"])
 def register():
-    """Self-service sign-up. Always creates a Student account - see SRS
-    3.2.1 Alternative Paths: "Academic Staff and System Administrator
-    accounts cannot be self-created." """
+    """Self-service sign-up for Students and Lecturers (Academic Staff).
+
+    A self-registered lecturer can see NOTHING until an administrator assigns
+    them their module(s), so signing up as a lecturer gives no access to any
+    student data by itself. System Administrator accounts can never be
+    self-created - only an existing administrator can create them."""
     if current_user.is_authenticated:
         return redirect(url_for("index"))
 
     if request.method == "POST":
+        account_type = request.form.get("account_type", "student")
         name = request.form.get("name", "").strip()
         student_number = request.form.get("student_number", "").strip()
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
 
-        if not name or not student_number or not password:
-            flash("Please fill in your name, student number and password.", "error")
-            return render_template("register.html")
+        def again(message):
+            flash(message, "error")
+            return render_template("register.html", form=request.form)
 
-        if User.query.filter_by(student_number=student_number).first():
-            flash("An account with that student number already exists.", "error")
-            return render_template("register.html")
+        if account_type not in ("student", "academic_staff"):
+            return again("Choose whether you are a student or a lecturer.")
+        if not name or not password:
+            return again("Please fill in your name and password.")
+        if len(password) < 6:
+            return again("The password must be at least 6 characters.")
+
+        if account_type == "student":
+            if not student_number:
+                return again("Students need a student number.")
+            if User.query.filter_by(student_number=student_number).first():
+                return again("An account with that student number already exists.")
+        else:
+            student_number = ""
+            if not email or "@" not in email:
+                return again("Lecturers log in with an e-mail address, so it is required.")
 
         if email and User.query.filter_by(email=email).first():
-            flash("An account with that email address already exists.", "error")
-            return render_template("register.html")
+            return again("An account with that email address already exists.")
 
-        user = User(name=name, student_number=student_number, email=email or None, role="student")
+        user = User(name=name, student_number=student_number or None, email=email or None,
+                    role=account_type)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
 
         login_user(user)
-        flash("Account created. Let's select your programme and modules.", "success")
-        return redirect(url_for("student.select_programme"))
+        if account_type == "student":
+            flash("Account created. Let's select your programme and modules.", "success")
+            return redirect(url_for("student.select_programme"))
+        flash("Lecturer account created. An administrator must now assign you your module(s) "
+              "before you can see anything.", "info")
+        return redirect(url_for("index"))
 
-    return render_template("register.html")
+    return render_template("register.html", form=None)
 
 
 @auth_bp.route("/logout")

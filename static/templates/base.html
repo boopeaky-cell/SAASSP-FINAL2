@@ -6,6 +6,14 @@
   <title>{% block title %}SAASSP{% endblock %}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+<style>
+  .pw-wrap { position: relative; }
+  .pw-wrap > input { padding-right: 44px; width: 100%; box-sizing: border-box; }
+  .pw-eye { position: absolute; top: 0; right: 0; height: 100%; width: 42px; border: 0; background: transparent;
+            display: flex; align-items: center; justify-content: center; color: #6B6F7B; cursor: pointer; border-radius: 0 6px 6px 0; }
+  .pw-eye:hover, .pw-eye:focus-visible { color: #14213D; }
+  .pw-eye svg { width: 20px; height: 20px; }
+</style>
 </head>
 <body>
 {% if current_user.is_authenticated %}
@@ -22,10 +30,9 @@
       {% if current_user.role == 'student' %}
         <a href="{{ url_for('student.dashboard') }}" class="{{ 'active' if request.endpoint == 'student.dashboard' }}">Dashboard</a>
         <a href="{{ url_for('student.select_programme') }}" class="{{ 'active' if request.endpoint in ['student.select_programme','student.select_modules'] }}">My Modules</a>
+        <a href="{{ url_for('student.advisor') }}" class="{{ 'active' if request.endpoint == 'student.advisor' }}">Advisor</a>
       {% elif current_user.role == 'academic_staff' %}
         <a href="{{ url_for('staff.student_list') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('staff.') }}">My Modules &amp; Students</a>
-      {% elif current_user.role == 'advisor' %}
-        <a href="{{ url_for('advisor.search') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('advisor.') }}">Find a Student</a>
       {% elif current_user.role == 'admin' %}
         <a href="{{ url_for('admin.programmes') }}" class="{{ 'active' if request.endpoint == 'admin.programmes' }}">Programme Data</a>
         <a href="{{ url_for('admin.users') }}" class="{{ 'active' if request.endpoint == 'admin.users' }}">User Accounts</a>
@@ -63,5 +70,32 @@
   {% endwith %}
   {% block auth_content %}{% endblock %}
 {% endif %}
+<script>
+  // Eye button on every password box: click to show / hide what you typed.
+  (function () {
+    var EYE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+    var EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+    document.querySelectorAll('input[type="password"]').forEach(function (input) {
+      var wrap = document.createElement('div');
+      wrap.className = 'pw-wrap';
+      input.parentNode.insertBefore(wrap, input);
+      wrap.appendChild(input);
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pw-eye';
+      btn.setAttribute('aria-label', 'Show password');
+      btn.setAttribute('title', 'Show password');
+      btn.innerHTML = EYE;
+      btn.addEventListener('click', function () {
+        var show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.innerHTML = show ? EYE_OFF : EYE;
+        btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+        btn.setAttribute('title', show ? 'Hide password' : 'Show password');
+      });
+      wrap.appendChild(btn);
+    });
+  })();
+</script>
 </body>
 </html>
