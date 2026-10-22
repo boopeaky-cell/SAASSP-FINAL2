@@ -186,8 +186,9 @@ def test_csv_upload_corrects_student_mark_and_reports_bad_rows(client):
         "csv_file": (io.BytesIO(csv_body.encode()), "test1.csv")},
         content_type="multipart/form-data", follow_redirects=True)
     page = resp.data.decode()
-    assert "2 mark(s) added" in page
-    assert "99999999" in page and "not enrolled" in page
+    assert "3 mark(s) added" in page          # 99999999 is kept even though not enrolled yet
+    assert "99999999" in page and "enrol" in page
+    assert "not a mark between 0 and 100" in page
     assert progress_of(client, "20215555") == 75.0   # lecturer mark alone counts
 
     # Student now enters their own (inflated) Test 1 = 90 -> lecturer's 60 replaces it
@@ -519,3 +520,112 @@ def test_deleting_a_student_also_removes_their_chat(client):
     from backend.models import ChatMessage
     with client.application.app_context():
         assert ChatMessage.query.count() == 0
+
+
+def test_lecturer_marks_are_kept_for_students_who_enrol_later_or_delete_their_account(client):
+    import io
+    from backend.models import LecturerMark, StudentModule, User
+    make_staff(client, "lect@saassp.local", modules=["4MTH111"])
+    login(client, "lect@saassp.local")
+    client.post("/staff/module/4MTH111/config", data=CONFIG_A, follow_redirects=True)
+
+    # 1. Marks uploaded for a student who has not even registered yet
+    csv_body = "student_number,mark\n202285904,72\n"
+    resp = client.post("/staff/module/4MTH111/upload", data={
+        "category_name": "Tests", "assessment_label": "Test 1",
+        "csv_file": (io.BytesIO(csv_body.encode()), "t1.csv")},
+        content_type="multipart/form-data", follow_redirects=True)
+    page = resp.data.decode()
+    assert "1 mark(s) added" in page and "not enrolled" in page
+    assert "202285904" in page and "72" in page                 # listed on the lecturer's page
+    with client.application.app_context():
+        assert LecturerMark.query.filter_by(student_number="202285904").count() == 1
+    client.get("/logout", follow_redirects=True)
+
+    # 2. The student registers and enrols later: the mark is already there
+    ids = enrol_student(client, "202285904")
+    assert progress_of(client, "202285904") == 72.0
+    login(client, "202285904", "password123")
+    page = client.get(f"/student/module/{ids['4MTH111']}").data.decode()
+    assert "72" in page and "Lecturer" in page
+    client.get("/logout", follow_redirects=True)
+
+    # 3. The student account is deleted: the lecturer's mark is still stored
+    make_staff(client, "boss@saassp.local", role="admin")
+    login(client, "boss@saassp.local")
+    with client.application.app_context():
+        uid = User.query.filter_by(student_number="202285904").first().id
+    client.post("/admin/users", data={"action": "delete", "user_id": uid}, follow_redirects=True)
+    with client.application.app_context():
+        assert User.query.filter_by(student_number="202285904").first() is None
+        assert LecturerMark.query.filter_by(student_number="202285904").count() == 1
+    client.get("/logout", follow_redirects=True)
+
+    # 4. They sign up again with the same number and enrol: the mark is back
+    ids = enrol_student(client, "202285904")
+    assert progress_of(client, "202285904") == 72.0
+
+    # 5. Undoing the upload removes the held mark as well
+    login(client, "lect@saassp.local")
+    page = client.get("/staff/module/4MTH111").data.decode()
+    import re
+    aid = re.search(r"/assessment/(\d+)/delete", page).group(1)
+    client.post(f"/staff/module/4MTH111/assessment/{aid}/delete", follow_redirects=True)
+    with client.application.app_context():
+        assert LecturerMark.query.count() == 0
+
+
+def test_ai_feedback_is_rewritten_when_a_lecturer_mark_replaces_the_students(client, monkeypatch):
+    import io
+    import backend.student as student_mod
+    calls = []
+
+    def fake_generate(context, **kw):
+        calls.append(dict(context))
+        return f"FEEDBACK for {context['mark_percentage']} (progress {context['progress_percentage']})"
+    monkeypatch.setattr(student_mod, "generate_feedback", fake_generate)
+
+    make_staff(client, "lect@saassp.local", modules=["4MTH111"])
+    ids = enrol_student(client, "20211234")
+    login(client, "lect@saassp.local")
+    client.post("/staff/module/4MTH111/config", data=CONFIG_A, follow_redirects=True)
+    # the lecturer defines "Test 1" (by uploading someone else's mark) so the student can pick it
+    client.post("/staff/module/4MTH111/upload", data={
+        "category_name": "Tests", "assessment_label": "Test 1",
+        "csv_file": (io.BytesIO(b"student_number,mark\n77777777,50\n"), "t.csv")},
+        content_type="multipart/form-data", follow_redirects=True)
+    client.get("/logout", follow_redirects=True)
+
+    # student enters 90 -> feedback about 90
+    login(client, "20211234", "password123")
+    client.post(f"/student/module/{ids['4MTH111']}/upload",
+                data={"assessment": "Tests::Test 1", "percentage": "90"}, follow_redirects=True)
+    page = client.get(f"/student/module/{ids['4MTH111']}").data.decode()
+    assert "FEEDBACK for 90.0" in page
+    n_before = len(calls)
+    client.get(f"/student/module/{ids['4MTH111']}")       # nothing changed: no new AI call
+    assert len(calls) == n_before
+    client.get("/logout", follow_redirects=True)
+
+    # lecturer uploads the official 60 for the same test
+    login(client, "lect@saassp.local")
+    client.post("/staff/module/4MTH111/upload", data={
+        "category_name": "Tests", "assessment_label": "Test 1",
+        "csv_file": (io.BytesIO(b"student_number,mark\n20211234,60\n77777777,50\n"), "t.csv")},
+        content_type="multipart/form-data", follow_redirects=True)
+    client.get("/logout", follow_redirects=True)
+
+    # next time the student opens the module the feedback is about the lecturer's 60
+    login(client, "20211234", "password123")
+    page = client.get(f"/student/module/{ids['4MTH111']}").data.decode()
+    assert "FEEDBACK for 60.0" in page and "FEEDBACK for 90.0" not in page
+    assert calls[-1]["student_entered_percentage"] == 90.0
+    n_after = len(calls)
+    client.get(f"/student/module/{ids['4MTH111']}")       # cached again
+    assert len(calls) == n_after
+
+    # a student who enters a mark AFTER the lecturer uploaded gets feedback on the official mark
+    client.post(f"/student/module/{ids['4MTH111']}/upload",
+                data={"assessment": "Tests::Test 1", "percentage": "95"}, follow_redirects=True)
+    page = client.get(f"/student/module/{ids['4MTH111']}").data.decode()
+    assert "FEEDBACK for 60.0" in page

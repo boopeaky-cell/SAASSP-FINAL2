@@ -23,12 +23,17 @@ from flask_login import login_required, current_user
 
 from backend import db
 from backend.models import (
-    User, StudentModule, Module, ModuleAssessmentConfig, ModuleAssessment, AssessmentMark,
+    User, StudentModule, Module, ModuleAssessmentConfig, ModuleAssessment, AssessmentMark, LecturerMark,
 )
 from backend.access_log import log_access
 from backend.progress import (
-    compute_progress, mark_rows, refresh_recorded_flags, next_sequence,
+    compute_progress, mark_rows, refresh_recorded_flags, next_sequence, sync_lecturer_marks,
 )
+
+import re
+from datetime import datetime
+
+STUDENT_NUMBER_RE = re.compile(r"^[A-Za-z0-9\-]{3,20}$")
 
 staff_bp = Blueprint("staff", __name__, url_prefix="/staff")
 
@@ -146,17 +151,24 @@ def module_page(module_code):
         ModuleAssessmentConfig.id).all()
     assessments = ModuleAssessment.query.filter_by(module_code=module_code).order_by(
         ModuleAssessment.category_name, ModuleAssessment.label).all()
-    counts = {}
-    for a in assessments:
-        counts[a.id] = (
-            AssessmentMark.query.join(StudentModule, StudentModule.id == AssessmentMark.student_module_id)
-            .filter(StudentModule.module_code == module_code, AssessmentMark.source == "lecturer",
-                    AssessmentMark.assessment_label == a.label).count()
-        )
     sms = StudentModule.query.filter_by(module_code=module_code).all()
+    for sm in sms:                      # make sure every enrolment shows the held marks
+        sync_lecturer_marks(sm)
+    db.session.commit()
+    enrolled_numbers = {sm.student.student_number for sm in sms}
+    counts, waiting_counts = {}, {}
+    for a in assessments:
+        rows = LecturerMark.query.filter_by(module_code=module_code, assessment_label=a.label).all()
+        counts[a.id] = len(rows)
+        waiting_counts[a.id] = sum(1 for r in rows if r.student_number not in enrolled_numbers)
+    waiting_marks = sorted(
+        [r for r in LecturerMark.query.filter_by(module_code=module_code).all()
+         if r.student_number not in enrolled_numbers],
+        key=lambda r: (r.student_number, r.assessment_label))
     students = sorted([(sm.student, compute_progress(sm)[0]) for sm in sms], key=lambda t: t[0].name)
     return render_template("staff_module.html", module=module, configs=configs, assessments=assessments,
-                           counts=counts, students=students,
+                           counts=counts, waiting_counts=waiting_counts, waiting_marks=waiting_marks,
+                           students=students,
                            categories=current_app.config["ASSESSMENT_CATEGORIES"])
 
 
@@ -290,8 +302,8 @@ def upload_marks(module_code):
         number = (row.get(number_col) or "").strip()
         if not number and not (row.get(mark_col) or "").strip():
             continue   # blank line
-        if number not in enrolled:
-            problems.append(f"Row {i}: {number or '(blank)'} is not enrolled in {module_code}.")
+        if not STUDENT_NUMBER_RE.match(number):
+            problems.append(f"Row {i}: \"{number or '(blank)'}\" is not a valid student number.")
             continue
         try:
             parsed[number] = _parse_mark(row.get(mark_col))   # a repeated number: last row wins
@@ -305,24 +317,34 @@ def upload_marks(module_code):
     if existing_label is None:
         db.session.add(ModuleAssessment(module_code=module_code, category_name=category, label=label))
 
-    added = updated = 0
+    # Every valid mark is kept against its student number - whether or not that
+    # student is enrolled, registered, or later deletes their account.
+    added = updated = waiting = 0
     for number, value in parsed.items():
-        sm = enrolled[number]
-        mark = AssessmentMark.query.filter_by(
-            student_module_id=sm.id, source="lecturer", assessment_label=label).first()
-        if mark:
-            mark.percentage_achieved = value
-            mark.category_name = category
+        held = LecturerMark.query.filter_by(
+            module_code=module_code, student_number=number, assessment_label=label).first()
+        if held:
+            held.percentage = value
+            held.category_name = category
+            held.uploaded_by = current_user.name
+            held.uploaded_at = datetime.utcnow()
             updated += 1
         else:
-            db.session.add(AssessmentMark(
-                student_module_id=sm.id, category_name=category, percentage_achieved=value,
-                sequence=next_sequence(sm.id), source="lecturer", assessment_label=label))
+            db.session.add(LecturerMark(
+                module_code=module_code, student_number=number, category_name=category,
+                assessment_label=label, percentage=value, uploaded_by=current_user.name))
             added += 1
-        refresh_recorded_flags(sm)
+        if number in enrolled:
+            db.session.flush()
+            sync_lecturer_marks(enrolled[number])
+        else:
+            waiting += 1
     db.session.commit()
 
     msg = f"{label}: {added} mark(s) added, {updated} updated, {len(problems)} row(s) skipped."
+    if waiting:
+        msg += (f" {waiting} belong to students not enrolled in {module_code} yet - they are saved "
+                f"and will show as soon as that student enrols.")
     flash(msg, "success" if not problems else "info")
     for p in problems[:8]:
         flash(p, "info")
@@ -346,6 +368,7 @@ def delete_assessment(module_code, assessment_id):
             if m.source == "lecturer" and m.assessment_label == a.label:
                 db.session.delete(m)
                 removed += 1
+    LecturerMark.query.filter_by(module_code=module_code, assessment_label=a.label).delete()
     db.session.delete(a)
     db.session.flush()
     for sm in sms:

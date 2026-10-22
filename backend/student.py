@@ -21,7 +21,7 @@ from backend.models import (
 )
 from backend.dp_engine import classify_trend
 from backend.progress import (
-    compute_progress, mark_rows, refresh_recorded_flags, next_sequence,
+    compute_progress, mark_rows, refresh_recorded_flags, next_sequence, sync_lecturer_marks,
 )
 from backend.feedback_service import generate_feedback
 from backend.advisor_chat import advisor_reply, MAX_MESSAGE_CHARS, MESSAGES_PER_HOUR
@@ -84,6 +84,9 @@ def select_modules():
                 module_code=module_code,
             ))
         db.session.commit()
+        for sm in StudentModule.query.filter_by(student_id=current_user.id).all():
+            sync_lecturer_marks(sm)      # marks the lecturer uploaded before you enrolled
+        db.session.commit()
         session.pop("pending_programme_code", None)
         flash("Modules saved. Your lecturer sets each module's assessment structure; once they have, enter your marks to track DP progress.", "success")
         return redirect(url_for("student.dashboard"))
@@ -102,6 +105,8 @@ def dashboard():
     student_modules = StudentModule.query.filter_by(student_id=current_user.id).all()
 
     summaries = []
+    if any([sync_lecturer_marks(sm) for sm in student_modules]):
+        db.session.commit()
     for sm in student_modules:
         result, _ = compute_progress(sm)   # always from the lecturer's CURRENT configuration
         summaries.append((sm, result, result is not None))
@@ -113,6 +118,83 @@ def dashboard():
 # 3.2.4 Upload Assessment Mark + 3.2.5 Receive AI-Assisted Feedback
 # ---------------------------------------------------------------------
 
+def _ai_settings():
+    return dict(
+        anthropic_api_key=current_app.config.get("ANTHROPIC_API_KEY", ""),
+        anthropic_model=current_app.config.get("ANTHROPIC_MODEL", ""),
+        groq_api_key=current_app.config["GROQ_API_KEY"],
+        groq_model=current_app.config["GROQ_MODEL"],
+        gemini_api_key=current_app.config["GEMINI_API_KEY"],
+        gemini_model=current_app.config["GEMINI_MODEL"],
+    )
+
+
+def _feedback_context(sm, category_name, percentage, result, trend, category_history,
+                      recorded_ids, student_entered=None):
+    module = sm.module
+    return {
+        "module_code": module.module_code,
+        "module_name": module.module_name,
+        "category": category_name,
+        "mark_percentage": percentage,
+        "student_entered_percentage": student_entered,
+        "progress_percentage": result.progress_percentage,
+        "threshold_band_label": result.threshold_band_label,
+        "trend": trend,
+        "category_history": [
+            {"percentage": float(h.percentage), "recorded": h.id in recorded_ids}
+            for h in sorted(category_history, key=lambda m: m.sequence)
+        ],
+    }
+
+
+def refresh_stale_feedback(sm):
+    """Keep the AI feedback in step with the marks that really count.
+
+    The feedback box describes the student's newest self-entered mark. If a
+    lecturer's mark has since replaced it (or the module's structure changed so
+    DP progress moved), the old text would contradict the figures, so it is
+    written again - once, when the student next opens the module."""
+    result, marks_by_category = compute_progress(sm)
+    if result is None:
+        return False
+    rows = mark_rows(sm, result)
+    own = [(m, status) for m, status in rows if m.source == "student"]
+    if not own or own[0][0].feedback is None:
+        return False
+    mark, status = own[0]
+    fb = mark.feedback
+
+    official = None
+    if status == "replaced":
+        key = (mark.category_name, (mark.assessment_label or "").strip().lower())
+        official = next((m for m, _s in rows if m.source == "lecturer"
+                         and (m.category_name, (m.assessment_label or "").strip().lower()) == key), None)
+    current = float(result.progress_percentage)
+    moved = fb.dp_progress_percentage is None or abs(float(fb.dp_progress_percentage) - current) > 0.005
+    corrected_later = bool(official and fb.created_at and official.date_uploaded
+                           and official.date_uploaded > fb.created_at)
+    if not (moved or corrected_later):
+        return False
+
+    target = official or mark
+    category_history = marks_by_category.get(target.category_name, [])
+    trend = classify_trend(category_history)
+    recorded_ids = set(result.recorded_mark_ids)
+    fb.generated_text = generate_feedback(
+        context=_feedback_context(
+            sm, target.category_name, float(target.percentage_achieved), result, trend,
+            category_history, recorded_ids,
+            student_entered=float(mark.percentage_achieved) if official else None),
+        **_ai_settings(),
+    )
+    fb.dp_progress_percentage = result.progress_percentage
+    fb.threshold_band = result.threshold_band_label
+    fb.trend_classification = trend
+    fb.created_at = datetime.utcnow()
+    return True
+
+
 @student_bp.route("/module/<int:sm_id>")
 @login_required
 def module_detail(sm_id):
@@ -121,6 +203,10 @@ def module_detail(sm_id):
     if sm.student_id != current_user.id:
         abort(403)
 
+    changed = sync_lecturer_marks(sm)
+    changed = refresh_stale_feedback(sm) or changed
+    if changed:
+        db.session.commit()
     categories = sm.categories
     result, _ = compute_progress(sm)
 
@@ -199,36 +285,30 @@ def upload_mark(sm_id):
     trend = classify_trend(category_history)
 
     # Invoke AI Feedback Service (SRS 3.2.5)
-    module = sm.module
-    history_payload = [
-        {"percentage": float(h.percentage), "recorded": h.id in recorded_ids}
-        for h in sorted(category_history, key=lambda m: m.sequence)
-    ]
-    feedback_text = generate_feedback(
-        context={
-            "module_code": module.module_code,
-            "module_name": module.module_name,
-            "category": category_name,
-            "mark_percentage": percentage,
-            "progress_percentage": result.progress_percentage,
-            "threshold_band_label": result.threshold_band_label,
-            "trend": trend,
-            "category_history": history_payload,
-        },
-        groq_api_key=current_app.config["GROQ_API_KEY"],
-        groq_model=current_app.config["GROQ_MODEL"],
-        gemini_api_key=current_app.config["GEMINI_API_KEY"],
-        gemini_model=current_app.config["GEMINI_MODEL"],
+    # If the lecturer has already uploaded the official mark for this assessment, the
+    # student's entry is replaced at once - the feedback is then written about the
+    # official mark (below), not about the number the student typed.
+    already_replaced = any(m.id == mark.id and status == "replaced"
+                           for m, status in mark_rows(sm, result))
+    feedback_text = None if already_replaced else generate_feedback(
+        context=_feedback_context(sm, category_name, percentage, result, trend,
+                                  category_history, recorded_ids),
+        **_ai_settings(),
     )
 
     db.session.add(FeedbackMessage(
         mark_id=mark.id,
-        dp_progress_percentage=result.progress_percentage,
+        dp_progress_percentage=None if already_replaced else result.progress_percentage,
         threshold_band=result.threshold_band_label,
         trend_classification=trend,
         generated_text=feedback_text,
     ))
     db.session.commit()
+    if already_replaced:
+        db.session.refresh(mark)
+        refresh_stale_feedback(sm)
+        db.session.commit()
+        feedback_text = mark.feedback.generated_text
 
     if feedback_text:
         flash("Mark uploaded. New feedback is ready below.", "success")
@@ -272,6 +352,10 @@ def advisor_send():
         return jsonify(error="You've sent a lot of messages in the last hour. "
                              "Please take a short break and try again later."), 429
 
+    mine = StudentModule.query.filter_by(student_id=current_user.id).all()
+    if any([sync_lecturer_marks(sm) for sm in mine]):
+        db.session.commit()
+
     prior = (ChatMessage.query.filter_by(student_id=current_user.id)
              .order_by(ChatMessage.id.desc()).limit(10).all())
     history = [{"role": m.role, "content": m.content} for m in reversed(prior)]
@@ -280,6 +364,8 @@ def advisor_send():
         current_user, history, text,
         groq_api_key=current_app.config["GROQ_API_KEY"], groq_model=current_app.config["GROQ_MODEL"],
         gemini_api_key=current_app.config["GEMINI_API_KEY"], gemini_model=current_app.config["GEMINI_MODEL"],
+        anthropic_api_key=current_app.config.get("ANTHROPIC_API_KEY", ""),
+        anthropic_model=current_app.config.get("ANTHROPIC_MODEL", ""),
     )
     db.session.add(ChatMessage(student_id=current_user.id, role="user", content=text))
     db.session.add(ChatMessage(student_id=current_user.id, role="assistant", content=reply))

@@ -6,6 +6,8 @@ lecturer and changeable at any time), progress is always computed from the
 CURRENT configuration at the moment it is shown - nothing is stored that could
 go stale when a weighting changes.
 """
+from datetime import datetime
+
 from flask import current_app
 
 from backend import db
@@ -67,3 +69,47 @@ def next_sequence(student_module_id):
     from backend.models import AssessmentMark
     return (db.session.query(db.func.max(AssessmentMark.sequence))
             .filter_by(student_module_id=student_module_id).scalar() or 0) + 1
+
+
+def sync_lecturer_marks(student_module):
+    """Make this enrolment show every mark a lecturer has uploaded for its
+    student number. Safe to call repeatedly. Caller commits.
+
+    Lecturer marks are stored by student number (LecturerMark), so they exist
+    before the student enrols or registers and survive account deletion; this
+    copies them onto the enrolment so they count towards DP progress."""
+    from backend.models import AssessmentMark, LecturerMark
+    number = (student_module.student.student_number or "").strip()
+    if not number:
+        return False
+    code = student_module.module_code
+    held = {h.assessment_label: h for h in
+            LecturerMark.query.filter_by(module_code=code, student_number=number).all()}
+    mirrors = {m.assessment_label: m for m in student_module.marks
+               if m.source == "lecturer" and m.assessment_label}
+    changed = False
+    # Older uploads (before LecturerMark existed) only live as mirrors: keep them.
+    for label, m in mirrors.items():
+        if label not in held:
+            db.session.add(LecturerMark(
+                module_code=code, student_number=number, category_name=m.category_name,
+                assessment_label=label, percentage=m.percentage_achieved))
+    for label, h in held.items():
+        m = mirrors.get(label)
+        if m is None:
+            db.session.add(AssessmentMark(
+                student_module_id=student_module.id, category_name=h.category_name,
+                percentage_achieved=h.percentage, sequence=next_sequence(student_module.id),
+                source="lecturer", assessment_label=label))
+            db.session.flush()
+            changed = True
+        elif float(m.percentage_achieved) != float(h.percentage) or m.category_name != h.category_name:
+            m.percentage_achieved = h.percentage
+            m.category_name = h.category_name
+            m.date_uploaded = datetime.utcnow()
+            changed = True
+    if changed:
+        db.session.flush()
+        db.session.expire(student_module, ["marks"])
+        refresh_recorded_flags(student_module)
+    return changed

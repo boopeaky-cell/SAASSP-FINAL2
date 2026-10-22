@@ -108,12 +108,37 @@ def fallback_summary(student) -> list:
     return lines
 
 
+def _try_claude(system_text, history, user_message, api_key, model_name):
+    if not api_key:
+        return None
+    try:
+        import anthropic
+        # Claude wants strictly alternating turns that start with the student.
+        turns = []
+        for h in history + [{"role": "user", "content": user_message}]:
+            role = "assistant" if h["role"] == "assistant" else "user"
+            if not turns and role == "assistant":
+                continue
+            if turns and turns[-1]["role"] == role:
+                turns[-1]["content"] += "\n" + h["content"]
+            else:
+                turns.append({"role": role, "content": h["content"]})
+        client = anthropic.Anthropic(api_key=api_key, timeout=15.0, max_retries=0)
+        response = client.messages.create(model=model_name, max_tokens=600,
+                                          system=system_text, messages=turns)
+        text = "".join(b.text for b in response.content if getattr(b, "type", "") == "text").strip()
+        return text or None
+    except Exception as exc:
+        logger.warning("Claude advisor chat failed, trying the next provider: %s", exc)
+        return None
+
+
 def _try_groq(messages, api_key, model_name):
     if not api_key:
         return None
     try:
         from groq import Groq
-        client = Groq(api_key=api_key)
+        client = Groq(api_key=api_key, timeout=12.0, max_retries=0)
         completion = client.chat.completions.create(model=model_name, messages=messages)
         return (completion.choices[0].message.content or "").strip() or None
     except Exception as exc:
@@ -127,7 +152,7 @@ def _try_gemini(system_text, history, user_message, api_key, model_name):
     try:
         from google import genai
         from google.genai import types
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=12000))
         transcript = "\n".join(
             f"{'Student' if h['role'] == 'user' else 'Advisor'}: {h['content']}" for h in history)
         prompt = (f"{transcript}\nStudent: {user_message}\nAdvisor:" if transcript
@@ -142,17 +167,19 @@ def _try_gemini(system_text, history, user_message, api_key, model_name):
 
 
 def advisor_reply(student, history, user_message, groq_api_key, groq_model,
-                  gemini_api_key, gemini_model):
+                  gemini_api_key, gemini_model, anthropic_api_key="", anthropic_model=""):
     """history: list of {"role": "user"|"assistant", "content": str}, oldest first,
     NOT including the new user_message. Returns (reply_text, used_ai: bool)."""
     snapshot = build_snapshot(student)
     system_text = SYSTEM_PROMPT + "\n--- SNAPSHOT OF THIS STUDENT'S PROGRESS ---\n" + snapshot
 
-    if groq_api_key or gemini_api_key:
+    if anthropic_api_key or groq_api_key or gemini_api_key:
         recent = history[-HISTORY_TURNS:]
         messages = [{"role": "system", "content": system_text}] + recent + \
                    [{"role": "user", "content": user_message}]
-        text = _try_groq(messages, groq_api_key, groq_model)
+        text = _try_claude(system_text, recent, user_message, anthropic_api_key, anthropic_model)
+        if not text:
+            text = _try_groq(messages, groq_api_key, groq_model)
         if not text:
             text = _try_gemini(system_text, recent, user_message, gemini_api_key, gemini_model)
         if text:

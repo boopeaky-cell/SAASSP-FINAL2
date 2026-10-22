@@ -214,3 +214,23 @@ class ChatMessage(db.Model):
     role = db.Column(db.String(10), nullable=False)       # "user" | "assistant"
     content = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+class LecturerMark(db.Model):
+    """A mark uploaded by a lecturer, kept against the STUDENT NUMBER (plain
+    text, no link to a user account). It therefore survives the student not
+    being enrolled yet, not having registered yet, or deleting their account:
+    whenever that student number is enrolled in the module, the mark is shown."""
+    __tablename__ = "lecturer_marks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    module_code = db.Column(db.String(10), nullable=False, index=True)
+    student_number = db.Column(db.String(20), nullable=False, index=True)
+    category_name = db.Column(db.String(20), nullable=False)
+    assessment_label = db.Column(db.String(60), nullable=False)
+    percentage = db.Column(db.Numeric(5, 2), nullable=False)
+    uploaded_by = db.Column(db.String(100))
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (db.UniqueConstraint("module_code", "student_number", "assessment_label",
+                                          name="uq_lecturer_mark"),)

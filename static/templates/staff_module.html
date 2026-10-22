@@ -58,7 +58,7 @@
     <tbody>
     {% for a in assessments %}
       <tr>
-        <td>{{ a.label }}</td><td>{{ a.category_name }}</td><td>{{ counts[a.id] }}</td>
+        <td>{{ a.label }}</td><td>{{ a.category_name }}</td><td>{{ counts[a.id] }}{% if waiting_counts[a.id] %} <span class="text-muted" style="font-size:12px;">({{ waiting_counts[a.id] }} waiting for the student to enrol)</span>{% endif %}</td>
         <td>
           <form method="post" action="{{ url_for('staff.delete_assessment', module_code=module.module_code, assessment_id=a.id) }}" onsubmit="return confirm('Remove the lecturer marks for {{ a.label }}?');">
             <button type="submit" class="btn btn-outline-danger btn-sm">Undo upload</button>
@@ -71,6 +71,21 @@
     </tbody>
   </table>
 </div>
+
+{% if waiting_marks %}
+<div class="card mb-3" style="padding:0; overflow:hidden;">
+  <div style="padding: 14px 16px; font-weight:700;">Marks saved for students not enrolled yet ({{ waiting_marks|length }})</div>
+  <p class="text-muted" style="font-size:12.5px; padding: 0 16px;">These marks are kept against the student number. They appear on the student's dashboard as soon as that student registers and selects this module, and they stay saved even if an account is deleted.</p>
+  <table class="saassp-table">
+    <thead><tr><th>Student Number</th><th>Assessment</th><th>Category</th><th>Mark</th></tr></thead>
+    <tbody>
+    {% for r in waiting_marks %}
+      <tr><td>{{ r.student_number }}</td><td>{{ r.assessment_label }}</td><td>{{ r.category_name }}</td><td>{{ r.percentage }}%</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 
 <div class="card" style="padding:0; overflow:hidden;">
   <div style="padding: 14px 16px; font-weight:700;">Students in this module ({{ students|length }})</div>

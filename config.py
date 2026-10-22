@@ -32,6 +32,9 @@ class Config:
     # AI Feedback Service (see SAASSP_SDD.docx Section 3.1, AI Feedback Service).
     # Groq is tried first (fast, generous free-tier limits); Gemini is only a
     # fallback for when Groq is unavailable or its call fails.
+    ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+    ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-5-5")
+    
     GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
     GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
