@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ sm.module_code }} progress - SAASSP{% endblock %}
+{% block content %}
+<a href="{{ back_url }}" style="font-size: 13px; color: var(--muted); display:block; margin-bottom: 10px;">&larr; {{ back_label }}</a>
+<div class="section-title">{{ sm.student.name }} &middot; {{ sm.module_code }}</div>
+<p class="text-muted" style="margin-top:-8px;">{{ sm.module.module_name }} &mdash; read-only view &middot; student number {{ sm.student.student_number }}</p>
+
+{% if result %}
+<div class="row g-3 mb-3">
+  <div class="col-md-7">
+    <div class="card h-100">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <div style="font-size: 12px; font-weight: 700; color: var(--muted);">DP PROGRESS</div>
+        <span class="band-pill band-{{ result.threshold_band_key }}">{{ result.threshold_band_label }}</span>
+      </div>
+      <div class="d-flex align-items-end gap-3">
+        <div style="font-size: 40px; font-weight: 800; color: var(--navy); line-height:1;">{{ result.progress_percentage }}%</div>
+        <div class="progress-bar-track flex-grow-1 mb-2"><div class="progress-bar-fill" style="width: {{ result.progress_percentage }}%; background: var(--navy);"></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-5">
+    <div class="card h-100">
+      <div style="font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 8px;">MODULE STRUCTURE</div>
+      {% for cat in categories %}
+      <div class="category-row">
+        <div style="font-size: 13.5px;">{{ cat.category_name }}</div>
+        <div style="font-size: 13px; font-weight: 700; color: var(--muted);">{{ cat.dp_weighting }}% &middot; best {{ cat.recorded_count }} of {{ cat.total_assessments }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{% if latest_feedback and latest_feedback.generated_text %}
+<div class="card mb-3">
+  <div style="font-weight:700; font-size: 13.5px; margin-bottom: 4px;">Most recent AI-Assisted Feedback (shown to the student)</div>
+  <p style="margin:0; font-size:14px;">{{ latest_feedback.generated_text }}</p>
+</div>
+{% endif %}
+
+<div class="card" style="padding:0; overflow:hidden;">
+  <table class="saassp-table">
+    <thead><tr><th>Assessment</th><th>Entered by</th><th>Mark</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for m, status in rows %}
+      <tr>
+        <td>{{ m.assessment_label or m.category_name }}{% if m.assessment_label %} <span class="text-muted" style="font-size:12px;">({{ m.category_name }})</span>{% endif %}</td>
+        <td>{{ 'Lecturer' if m.source == 'lecturer' else 'Student' }}</td>
+        <td class="{{ 'mark-displaced' if status != 'recorded' }}">{{ m.percentage_achieved }}%</td>
+        <td>{% if status == 'recorded' %}<span style="color:#205A2E; font-weight:600;">Counts</span>
+            {% elif status == 'replaced' %}<span class="text-muted">Replaced by lecturer's mark</span>
+            {% else %}<span class="text-muted">Displaced (not in best N)</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="text-muted">No marks yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">This module's assessment structure hasn't been set up by the lecturer yet.</div>
+{% endif %}
+{% endblock %}

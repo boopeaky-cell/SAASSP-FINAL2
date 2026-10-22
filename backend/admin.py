@@ -8,7 +8,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_required, current_user
 
 from backend import db
-from backend.models import User, Programme, Module, ProgrammeModule, LecturerModule
+from backend.models import User, Programme, Module, ProgrammeModule, LecturerModule, AccessLog
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -134,6 +134,19 @@ def users():
                 db.session.commit()
                 flash(f"Updated the module(s) {u.name} teaches.", "success")
 
+        elif action == "reset_password":
+            u = User.query.get(request.form.get("user_id"))
+            new_pw = request.form.get("new_password", "")
+            if not u:
+                flash("User not found.", "error")
+            elif len(new_pw) < 6:
+                flash("Temporary password must be at least 6 characters.", "error")
+            else:
+                u.set_password(new_pw)
+                db.session.commit()
+                flash(f"Password reset for {u.name}. Give them the temporary password and ask them to change it "
+                      f"(Change password, bottom of the menu).", "success")
+
         elif action == "delete":
             user_id = request.form.get("user_id")
             u = User.query.get(user_id)
@@ -159,3 +172,37 @@ def users():
     }
     return render_template("admin_users.html", users=all_users, all_modules=all_modules,
                             assigned_by_lecturer=assigned_by_lecturer)
+
+
+@admin_bp.route("/access-log")
+@login_required
+def access_log():
+    """Who looked at which student's record, and when (lecturers and advisors)."""
+    _require_admin()
+    q = request.args.get("student_number", "").strip()
+    query = AccessLog.query
+    if q:
+        query = query.filter(AccessLog.student_number.contains(q))
+    entries = query.order_by(AccessLog.created_at.desc()).limit(300).all()
+    return render_template("admin_access_log.html", entries=entries, q=q)
+
+
+@admin_bp.route("/users/<int:user_id>/modules", methods=["GET", "POST"])
+@login_required
+def lecturer_modules(user_id):
+    """Assign the module(s) a lecturer teaches, on a page of its own with a search box."""
+    _require_admin()
+    lecturer = User.query.filter_by(id=user_id, role="academic_staff").first_or_404()
+    if request.method == "POST":
+        codes = set(request.form.getlist("module_codes"))
+        LecturerModule.query.filter_by(lecturer_id=lecturer.id).delete()
+        for code in codes:
+            if Module.query.get(code):
+                db.session.add(LecturerModule(lecturer_id=lecturer.id, module_code=code))
+        db.session.commit()
+        flash(f"Saved: {lecturer.name} now teaches {len(codes)} module(s).", "success")
+        return redirect(url_for("admin.users"))
+    assigned = {lm.module_code for lm in lecturer.taught_modules}
+    all_modules = Module.query.order_by(Module.module_code).all()
+    return render_template("admin_lecturer_modules.html", lecturer=lecturer,
+                           all_modules=all_modules, assigned=assigned)

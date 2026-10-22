@@ -136,3 +136,12 @@ Row counts read from the configured database on 2026-09-29. No personal account 
 User roles: 3 students, 1 academic staff account, and 1 administrator account.
 
 The programme and module catalogues originate from `data/programmes.csv`, `data/modules.csv`, and `data/programme_modules.csv`. Database counts can differ from those source files if the catalogue has since been edited or reseeded.
+
+## Update: lecturer-configured modules, lecturer marks, advisor access log
+
+- `assessment_category_configs` (per student) was **removed**. It is replaced by `module_assessment_configs` (per module: `module_code`, `category_name`, `dp_weighting`, `total_assessments`, `recorded_count`, `updated_at`, `updated_by`), set by the lecturer and changeable at any time. DP progress is always calculated from the current configuration.
+- `module_assessments` (new): named assessments in a module (e.g. "Test 1" under Tests), created when a lecturer uploads a CSV.
+- `assessment_marks` gained `source` (`student` | `lecturer`) and `assessment_label`. A `lecturer` mark replaces a `student` mark with the same category + label when progress is calculated.
+- `access_logs` (new): who (`viewer_*`) opened which student (`student_number`), when, and the action. No foreign keys, so entries survive account removal.
+- `users.role` now also allows `advisor` (read-only, all students, search by student number).
+- Existing databases: run `python migrate_lecturer_config.py` once.

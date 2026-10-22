@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Create account - SAASSP{% endblock %}
 {% block auth_content %}
+{% set f = form or {} %}
 <div class="auth-split">
   <div class="auth-visual">
     <img class="bg-photo" src="{{ url_for('static', filename='img/campus_building.jpg') }}" alt="">
@@ -11,36 +12,59 @@
         <div class="brand-name">SAASSP</div>
       </div>
       <div class="auth-headline">Know where you stand, <em>before</em> it matters.</div>
-      <div class="auth-subtext">Create your Student account to select your programme and modules, and start tracking your Duly Performed progress.</div>
+      <div class="auth-subtext">Create your account. Students select their programme and modules and track Duly Performed progress; lecturers set up and follow the modules they teach.</div>
     </div>
-    <div class="auth-disclaimer">Academic Staff and System Administrator accounts are created by an administrator, not self-registered.</div>
+    <div class="auth-disclaimer">System Administrator accounts can only be created by an existing administrator.</div>
   </div>
 
   <div class="auth-form-side">
     <div class="auth-form-inner">
-      <div class="auth-title">Create your Student account</div>
+      <div class="auth-title">Create your account</div>
       <div class="auth-sub">University of Zululand</div>
       <form method="post">
         <div class="mb-3">
+          <label class="form-label">I am a</label>
+          <select name="account_type" id="account-type" class="form-select">
+            <option value="student" {{ 'selected' if f.get('account_type', 'student') == 'student' }}>Student</option>
+            <option value="academic_staff" {{ 'selected' if f.get('account_type') == 'academic_staff' }}>Lecturer</option>
+          </select>
+        </div>
+        <div class="mb-3">
           <label class="form-label">Full name</label>
-          <input type="text" name="name" class="form-control" required autofocus>
+          <input type="text" name="name" value="{{ f.get('name', '') }}" class="form-control" required autofocus>
         </div>
-        <div class="mb-3">
+        <div class="mb-3" id="student-number-row">
           <label class="form-label">Student number</label>
-          <input type="text" name="student_number" class="form-control" required placeholder="e.g. 20211234">
+          <input type="text" name="student_number" id="student-number-input" value="{{ f.get('student_number', '') }}" class="form-control" placeholder="e.g. 20211234">
         </div>
         <div class="mb-3">
-          <label class="form-label">Email address <span class="text-muted" style="font-weight:400; font-size:12px;">(optional)</span></label>
-          <input type="email" name="email" class="form-control">
+          <label class="form-label">Email address <span class="text-muted" id="email-hint" style="font-weight:400; font-size:12px;">(recommended: used to reset a forgotten password)</span></label>
+          <input type="email" name="email" id="email-input" value="{{ f.get('email', '') }}" class="form-control">
         </div>
         <div class="mb-3">
           <label class="form-label">Password</label>
           <input type="password" name="password" class="form-control" required minlength="6">
         </div>
+        <p class="text-muted" id="lecturer-note" style="font-size:12.5px; display:none;">Lecturers log in with their e-mail address. After you sign up, an administrator must assign you your module(s) before you can see any students.</p>
         <button type="submit" class="btn btn-navy text-white w-100 py-2">Create account</button>
       </form>
       <div class="auth-switch">Already have an account? <a href="{{ url_for('auth.login') }}">Log in</a></div>
     </div>
   </div>
 </div>
+<script>
+  (function () {
+    var type = document.getElementById('account-type');
+    function apply() {
+      var lecturer = type.value === 'academic_staff';
+      document.getElementById('student-number-row').style.display = lecturer ? 'none' : '';
+      document.getElementById('student-number-input').required = !lecturer;
+      document.getElementById('email-input').required = lecturer;
+      document.getElementById('email-hint').style.display = lecturer ? 'none' : '';
+      document.getElementById('lecturer-note').style.display = lecturer ? '' : 'none';
+    }
+    type.addEventListener('change', apply);
+    apply();
+  })();
+</script>
 {% endblock %}

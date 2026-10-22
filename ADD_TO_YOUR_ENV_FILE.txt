@@ -1,0 +1,7 @@
+
+# --- E-mail for password reset links (optional; see backend/mailer.py) ---
+MAIL_SERVER=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=your.address@gmail.com
+MAIL_PASSWORD=your-16-letter-app-password
+MAIL_FROM=SAASSP <your.address@gmail.com>

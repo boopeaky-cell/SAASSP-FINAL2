@@ -10,6 +10,15 @@
   </div>
 </div>
 
+<a href="{{ url_for('student.advisor') }}" class="card mb-4" style="display:flex; flex-direction:row; align-items:center; gap:16px; text-decoration:none; color:inherit; border-left:4px solid var(--gold);">
+  <div style="flex:none; width:44px; height:44px; border-radius:999px; background:var(--navy); display:flex; align-items:center; justify-content:center; color: var(--gold); font-weight:800; font-size:18px;">A</div>
+  <div style="flex:1;">
+    <div style="font-weight:700; font-size:15px;">Talk to your Advisor</div>
+    <div class="text-muted" style="font-size:13px;">Ask the chatbot how you are doing across all your modules and what to focus on next.</div>
+  </div>
+  <div style="font-weight:700; color:var(--navy); font-size:13px; white-space:nowrap;">Open &rarr;</div>
+</a>
+
 <div class="d-flex align-items-baseline justify-content-between mb-3">
   <div class="section-title mb-0">Your Modules</div>
   <a href="{{ url_for('student.select_programme') }}" style="font-size: 13px; font-weight: 600; color: var(--navy);">+ Add another module</a>
@@ -29,7 +38,7 @@
       {% if configured %}
       <span class="band-pill band-{{ result.threshold_band_key }}">{{ result.threshold_band_label }}</span>
       {% else %}
-      <span class="band-pill" style="background:#ECE8DA; color: var(--muted);">Not configured</span>
+      <span class="band-pill" style="background:#ECE8DA; color: var(--muted);">Awaiting lecturer</span>
       {% endif %}
     </div>
     {% if configured %}
@@ -41,7 +50,7 @@
     </div>
     <div style="font-size: 12.5px; color: var(--muted);">{{ sm.marks|length }} mark(s) uploaded</div>
     {% else %}
-    <p class="text-muted mb-0" style="font-size: 13.5px;">Configure this module's assessment structure to start tracking DP progress.</p>
+    <p class="text-muted mb-0" style="font-size: 13.5px;">Your lecturer hasn't set up this module's assessment structure yet. Once they do, your DP progress will appear here.</p>
     {% endif %}
   </a>
   {% endfor %}

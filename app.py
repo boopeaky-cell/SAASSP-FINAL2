@@ -23,7 +23,7 @@ Frameworks / libraries used:
 """
 import os
 
-from flask import Flask, abort, redirect, request, url_for
+from flask import Flask, abort, flash, redirect, request, url_for
 from flask_login import current_user
 
 from backend import db, login_manager
@@ -91,6 +91,10 @@ def create_app(config_object=None):
                 return redirect(url_for("staff.student_list"))
             if current_user.role == "admin":
                 return redirect(url_for("admin.programmes"))
+            # Unknown/retired role (e.g. an old "advisor" account): don't loop, log out.
+            from flask_login import logout_user
+            logout_user()
+            flash("This account type is no longer in use. Please ask an administrator.", "error")
         return redirect(url_for("auth.login"))
 
     # ---- Database tables -------------------------------------------------

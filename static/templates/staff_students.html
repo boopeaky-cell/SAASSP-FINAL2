@@ -1,21 +1,41 @@
 {% extends "base.html" %}
-{% block title %}Students - SAASSP{% endblock %}
+{% block title %}My Modules &amp; Students - SAASSP{% endblock %}
 {% block content %}
 <div class="hero-banner">
   <img src="{{ url_for('static', filename='img/library_dome.jpg') }}" alt="" style="object-position: center 20%;">
   <div class="hero-scrim"></div>
   <div class="hero-text">
     <div class="hero-title">Welcome, {{ current_user.name.split(' ')[0] }}</div>
-    <div class="hero-sub">Review your students' DP progress, read-only.</div>
+    <div class="hero-sub">Set up your modules, upload real marks, and follow your students' DP progress.</div>
   </div>
 </div>
 
-<div class="section-title">Students</div>
 {% if no_modules_assigned %}
   <div class="card" style="margin-bottom: 12px;">
     <span class="text-muted">You have no modules assigned yet. Ask a System Administrator to assign the module(s) you teach in Manage User Accounts.</span>
   </div>
-{% endif %}
+{% else %}
+<div class="section-title">My Modules</div>
+<div class="module-grid mb-4">
+  {% for m in modules %}
+  <a href="{{ url_for('staff.module_page', module_code=m.module.module_code) }}" class="card" style="text-decoration:none; color:inherit; display:block;">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.4px; color: var(--muted);">{{ m.module.module_code }}</div>
+      {% if m.configured %}<span class="band-pill band-safe">Structure set</span>{% else %}<span class="band-pill" style="background:#F6E1D3; color:#7A2E0B;">Needs setup</span>{% endif %}
+    </div>
+    <div style="font-size: 15px; font-weight: 700;">{{ m.module.module_name }}</div>
+    <div class="text-muted" style="font-size: 12.5px; margin-top:4px;">{{ m.student_count }} student(s) enrolled</div>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="section-title">Find a student</div>
+<form method="get" class="d-flex gap-2 mb-3" style="max-width: 460px;">
+  <input type="text" name="student_number" value="{{ query }}" class="form-control" placeholder="Student number (searches your modules only)">
+  <button type="submit" class="btn btn-navy text-white px-4">Search</button>
+  {% if query %}<a href="{{ url_for('staff.student_list') }}" class="btn btn-outline-secondary">Clear</a>{% endif %}
+</form>
+
 <div class="card" style="padding:0; overflow:hidden;">
   <table class="saassp-table">
     <thead><tr><th>Name</th><th>Student Number</th><th></th></tr></thead>
@@ -24,12 +44,13 @@
       <tr>
         <td>{{ s.name }}</td>
         <td>{{ s.student_number }}</td>
-        <td><a href="{{ url_for('staff.student_modules', student_id=s.id) }}" style="color: var(--navy); font-weight:600; font-size: 13px;">View modules &rarr;</a></td>
+        <td><a href="{{ url_for('staff.student_modules', student_id=s.id) }}" style="color: var(--navy); font-weight:600; font-size: 13px;">View progress &rarr;</a></td>
       </tr>
     {% else %}
-      <tr><td colspan="3" class="text-muted">No students in your module(s) yet.</td></tr>
+      <tr><td colspan="3" class="text-muted">{% if query %}No student in your module(s) matches "{{ query }}".{% else %}No students in your module(s) yet.{% endif %}</td></tr>
     {% endfor %}
     </tbody>
   </table>
 </div>
+{% endif %}
 {% endblock %}
